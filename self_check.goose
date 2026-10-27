@@ -2,6 +2,9 @@
 
 import os;
 import sha256;
+import sha512;
+import ripemd160;
+import hkdf;
 import keccak256;
 import blake3;
 import chacha20poly1305;
@@ -30,6 +33,9 @@ fn go(name: u8[:], ok: bool) -> bool {
 fn ::main() {
     var all = true;
     if !go("sha256", sha256::self_check()) { all = false; }
+    if !go("sha512", sha512::self_check()) { all = false; }
+    if !go("ripemd160", ripemd160::self_check()) { all = false; }
+    if !go("hkdf", hkdf::self_check()) { all = false; }
     if !go("keccak256", keccak256::self_check()) { all = false; }
     if !go("blake3", blake3::self_check()) { all = false; }
     if !go("chacha20poly1305", chacha20poly1305::self_check()) { all = false; }

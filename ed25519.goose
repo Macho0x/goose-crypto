@@ -4,6 +4,7 @@
 
 import std;
 import x25519;
+import sha512;
 
 namespace ed25519;
 
@@ -158,147 +159,26 @@ fn base(d: Fe) -> Pt, bool {
     return Pt { x, y, f1(), fmul(x, y) }, true;
 }
 
-// --- SHA-512 (FIPS 180-4). Digests are 64 bytes. ---
+// SHA-512 lives in sha512.goose. These wrap the two- and three-part hashes
+// Ed25519 feeds to the scalar.
 
-const K512: u64[80] = [
-    0x428a2f98d728ae22, 0x7137449123ef65cd, 0xb5c0fbcfec4d3b2f, 0xe9b5dba58189dbbc,
-    0x3956c25bf348b538, 0x59f111f1b605d019, 0x923f82a4af194f9b, 0xab1c5ed5da6d8118,
-    0xd807aa98a3030242, 0x12835b0145706fbe, 0x243185be4ee4b28c, 0x550c7dc3d5ffb4e2,
-    0x72be5d74f27b896f, 0x80deb1fe3b1696b1, 0x9bdc06a725c71235, 0xc19bf174cf692694,
-    0xe49b69c19ef14ad2, 0xefbe4786384f25e3, 0x0fc19dc68b8cd5b5, 0x240ca1cc77ac9c65,
-    0x2de92c6f592b0275, 0x4a7484aa6ea6e483, 0x5cb0a9dcbd41fbd4, 0x76f988da831153b5,
-    0x983e5152ee66dfab, 0xa831c66d2db43210, 0xb00327c898fb213f, 0xbf597fc7beef0ee4,
-    0xc6e00bf33da88fc2, 0xd5a79147930aa725, 0x06ca6351e003826f, 0x142929670a0e6e70,
-    0x27b70a8546d22ffc, 0x2e1b21385c26c926, 0x4d2c6dfc5ac42aed, 0x53380d139d95b3df,
-    0x650a73548baf63de, 0x766a0abb3c77b2a8, 0x81c2c92e47edaee6, 0x92722c851482353b,
-    0xa2bfe8a14cf10364, 0xa81a664bbc423001, 0xc24b8b70d0f89791, 0xc76c51a30654be30,
-    0xd192e819d6ef5218, 0xd69906245565a910, 0xf40e35855771202a, 0x106aa07032bbd1b8,
-    0x19a4c116b8d2d0c8, 0x1e376c085141ab53, 0x2748774cdf8eeb99, 0x34b0bcb5e19b48a8,
-    0x391c0cb3c5c95a63, 0x4ed8aa4ae3418acb, 0x5b9cca4f7763e373, 0x682e6ff3d6b2b8a3,
-    0x748f82ee5defb2fc, 0x78a5636f43172f60, 0x84c87814a1f0ab72, 0x8cc702081a6439ec,
-    0x90befffa23631e28, 0xa4506cebde82bde9, 0xbef9a3f7b2c67915, 0xc67178f2e372532b,
-    0xca273eceea26619c, 0xd186b8c721c0c207, 0xeada7dd6cde0eb1e, 0xf57d4f7fee6ed178,
-    0x06f067aa72176fba, 0x0a637dc5a2c898a6, 0x113f9804bef90dae, 0x1b710b35131c471b,
-    0x28db77f523047d84, 0x32caab7b40c72493, 0x3c9ebe0a15c9bebc, 0x431d67c49c100d4c,
-    0x4cc5d4becb3e42b6, 0x597f299cfc657e2a, 0x5fcb6fab3ad6faec, 0x6c44198c4a475817,
-];
+fn h512(data: u8[:]) -> u8[64] { return sha512::hash(data); }
 
-struct Sha {
-    h: u64[8],
-    buf: u8[128],
-    n: i64,
-    bytes: u64,
+fn h512_2(a: u8[:], b: u8[:]) -> u8[64] {
+    var c: sha512::Ctx = default<sha512::Ctx>();
+    sha512::init(c);
+    sha512::update(c, a);
+    sha512::update(c, b);
+    return sha512::finish(c);
 }
 
-fn rotr64(x: u64, n: u64) -> u64 { (x >> n) | (x << (64 - n)) }
-
-fn sha_init(c: Sha&) {
-    c.h[0] = 0x6a09e667f3bcc908;
-    c.h[1] = 0xbb67ae8584caa73b;
-    c.h[2] = 0x3c6ef372fe94f82b;
-    c.h[3] = 0xa54ff53a5f1d36f1;
-    c.h[4] = 0x510e527fade682d1;
-    c.h[5] = 0x9b05688c2b3e6c1f;
-    c.h[6] = 0x1f83d9abfb41bd6b;
-    c.h[7] = 0x5be0cd19137e2179;
-    c.n = 0;
-    c.bytes = 0;
-}
-
-fn sha_compress(h: u64[8]&, buf: u8[:]) {
-    var w: u64[80] = [0; 80];
-    for i in 0..16 {
-        let j = i * 8;
-        var x: u64 = 0;
-        for k in 0..8 {
-            let byte: u64 = buf[j + k];
-            x |= byte << ((7 - k) * 8);
-        }
-        w[i] = x;
-    }
-    for i in 16..80 {
-        let x = w[i - 15];
-        let y = w[i - 2];
-        let s0 = rotr64(x, 1) ^ rotr64(x, 8) ^ (x >> 7);
-        let s1 = rotr64(y, 19) ^ rotr64(y, 61) ^ (y >> 6);
-        w[i] = w[i - 16] + s0 + w[i - 7] + s1;
-    }
-    var a = h[0]; var b = h[1]; var c = h[2]; var d = h[3];
-    var e = h[4]; var f = h[5]; var g = h[6]; var hh = h[7];
-    for i in 0..80 {
-        let s1 = rotr64(e, 14) ^ rotr64(e, 18) ^ rotr64(e, 41);
-        let ch = (e & f) ^ (~e & g);
-        let t1 = hh + s1 + ch + K512[i] + w[i];
-        let s0 = rotr64(a, 28) ^ rotr64(a, 34) ^ rotr64(a, 39);
-        let maj = (a & b) ^ (a & c) ^ (b & c);
-        let t2 = s0 + maj;
-        hh = g; g = f; f = e; e = d + t1; d = c; c = b; b = a; a = t1 + t2;
-    }
-    h[0] += a; h[1] += b; h[2] += c; h[3] += d;
-    h[4] += e; h[5] += f; h[6] += g; h[7] += hh;
-}
-
-fn sha_update(c: Sha&, data: u8[:]) {
-    var off = 0;
-    while off < data.len {
-        let space = 128 - c.n;
-        var take = data.len - off;
-        if take > space { take = space; }
-        for i in 0..take { c.buf[c.n + i] = data[off + i]; }
-        c.n += take;
-        off += take;
-        c.bytes += take as u64;
-        if c.n == 128 {
-            sha_compress(c.h, c.buf);
-            c.n = 0;
-        }
-    }
-}
-
-fn sha_finish(c: Sha&) -> u8[64] {
-    let n = c.n;
-    c.buf[n] = 0x80;
-    if n >= 112 {
-        for i in (n + 1)..128 { c.buf[i] = 0; }
-        sha_compress(c.h, c.buf);
-        for i in 0..112 { c.buf[i] = 0; }
-    } else {
-        for i in (n + 1)..112 { c.buf[i] = 0; }
-    }
-    let bits = c.bytes << 3;
-    for k in 0..8 { c.buf[112 + k] = 0; }
-    for k in 0..8 { c.buf[120 + k] = (bits >> ((7 - k) * 8)) as! u8; }
-    sha_compress(c.h, c.buf);
-    var out: u8[64] = [0; 64];
-    for i in 0..8 {
-        let v = c.h[i];
-        for k in 0..8 { out[i * 8 + k] = (v >> ((7 - k) * 8)) as! u8; }
-    }
-    return out;
-}
-
-fn sha512(data: u8[:]) -> u8[64] {
-    var c: Sha = default<Sha>();
-    sha_init(c);
-    sha_update(c, data);
-    return sha_finish(c);
-}
-
-fn sha512_2(a: u8[:], b: u8[:]) -> u8[64] {
-    var c: Sha = default<Sha>();
-    sha_init(c);
-    sha_update(c, a);
-    sha_update(c, b);
-    return sha_finish(c);
-}
-
-fn sha512_3(a: u8[:], b: u8[:], c: u8[:]) -> u8[64] {
-    var s: Sha = default<Sha>();
-    sha_init(s);
-    sha_update(s, a);
-    sha_update(s, b);
-    sha_update(s, c);
-    return sha_finish(s);
+fn h512_3(a: u8[:], b: u8[:], c: u8[:]) -> u8[64] {
+    var s: sha512::Ctx = default<sha512::Ctx>();
+    sha512::init(s);
+    sha512::update(s, a);
+    sha512::update(s, b);
+    sha512::update(s, c);
+    return sha512::finish(s);
 }
 
 // --- scalars mod L ---
@@ -455,7 +335,7 @@ fn clamp_scalar(h: u8[:], out: u8[:]) {
 
 fn public_key(seed: u8[:]) -> u8[32], bool {
     if seed.len != 32 { return [0; 32], false; }
-    let h = sha512(seed);
+    let h = h512(seed);
     var a: u8[32] = [0; 32];
     clamp_scalar(h, a);
     let d = ed_d();
@@ -466,17 +346,17 @@ fn public_key(seed: u8[:]) -> u8[32], bool {
 
 fn sign(seed: u8[:], msg: u8[:]) -> u8[64], bool {
     if seed.len != 32 { return [0; 64], false; }
-    let h = sha512(seed);
+    let h = h512(seed);
     var a: u8[32] = [0; 32];
     clamp_scalar(h, a);
     let d = ed_d();
     let bp, ok = base(d);
     if !ok { return [0; 64], false; }
     let pub = encode(pt_mul(bp, a, d));
-    let r_hash = sha512_2(h[32..64], msg);
+    let r_hash = h512_2(h[32..64], msg);
     let r = sc_to_bytes(sc_from64(r_hash));
     let rr = encode(pt_mul(bp, r, d));
-    let k_hash = sha512_3(rr, pub, msg);
+    let k_hash = h512_3(rr, pub, msg);
     let k = sc_from64(k_hash);
     let s = sc_add(sc_from32(r), sc_mul(k, sc_from32(a)));
     let sb = sc_to_bytes(s);
@@ -497,7 +377,7 @@ fn verify(public: u8[:], msg: u8[:], sig: u8[:]) -> bool {
     if !aok || !rok { return false; }
     let bp, bok = base(d);
     if !bok { return false; }
-    let k_hash = sha512_3(sig[..32], public, msg);
+    let k_hash = h512_3(sig[..32], public, msg);
     let k = sc_to_bytes(sc_from64(k_hash));
     let left = encode(pt_mul(bp, sig[32..64], d));
     let right = encode(pt_add(r, pt_mul(a, k, d), d));
@@ -524,8 +404,6 @@ fn unhex(hex: u8[:], out: u8[:]) {
 }
 
 fn self_check() -> bool {
-    if !sha512("").eq_hex("cf83e1357eefb8bdf1542850d66d8007d620e4050b5715dc83f4a921d36ce9ce47d0d13c5d85f2b0ff8318d2877eec2f63b931bd47417a81a538327af927da3e") { return false; }
-    if !sha512("abc").eq_hex("ddaf35a193617abacc417349ae20413112e6fa4e89a97ea20a9eeee64b55d39a2192992a274fc1a836ba3c23a3feebbd454d4423643ce80e2a9ac94fa54ca49f") { return false; }
     let d = ed_d();
     let bp, bok = base(d);
     if !bok || !encode(bp).eq_hex("5866666666666666666666666666666666666666666666666666666666666666") { return false; }
