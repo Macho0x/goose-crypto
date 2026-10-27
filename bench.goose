@@ -6,6 +6,9 @@
 
 import os;
 import sha256;
+import sha512;
+import ripemd160;
+import hkdf;
 import keccak256;
 import blake3;
 import chacha20poly1305;
@@ -95,6 +98,43 @@ fn sha4k() -> u64 {
     return mark(d[0], true);
 }
 
+fn sha512_32() -> u64 {
+    buf32[0] += 1;
+    let d = sha512::hash(buf32);
+    return mark(d[0], true);
+}
+
+fn sha512_4k() -> u64 {
+    buf4k[0] += 1;
+    let d = sha512::hash(buf4k);
+    return mark(d[0], true);
+}
+
+fn ripe32() -> u64 {
+    buf32[0] += 1;
+    let d = ripemd160::hash(buf32);
+    return mark(d[0], true);
+}
+
+fn ripe4k() -> u64 {
+    buf4k[0] += 1;
+    let d = ripemd160::hash(buf4k);
+    return mark(d[0], true);
+}
+
+fn hkdf_extract() -> u64 {
+    buf32[0] += 1;
+    let prk = hkdf::extract(salt, buf32);
+    return mark(prk[0], true);
+}
+
+fn hkdf_expand() -> u64 {
+    buf32[0] += 1;
+    var out: u8[32] = [0; 32];
+    let ok = hkdf::expand(secret, buf32, out);
+    return mark(out[0], ok);
+}
+
 fn kec0() -> u64 {
     let d = keccak256::hash("");
     return mark(d[0], true);
@@ -178,6 +218,22 @@ fn argon() -> u64 {
 }
 
 fn ready() -> bool {
+    let s512 = sha512::hash("");
+    if !sha512::eq_hex(s512, "cf83e1357eefb8bdf1542850d66d8007d620e4050b5715dc83f4a921d36ce9ce47d0d13c5d85f2b0ff8318d2877eec2f63b931bd47417a81a538327af927da3e") {
+        return false;
+    }
+    let ripe = ripemd160::hash("");
+    if !ripemd160::eq_hex(ripe, "9c1185a5c5e9fc54612808977ee8f548b2258d31") { return false; }
+    var ikm: u8[22] = [0x0b; 22];
+    let prk = hkdf::extract("", ikm);
+    if !hkdf::eq_hex(prk, "19ef24a32c717b167f33a91d6f648bdf96596776afdb6377ac434c1c293ccb04") {
+        return false;
+    }
+    var okm: u8[42] = [0; 42];
+    if !hkdf::expand(prk, "", okm) { return false; }
+    if !hkdf::eq_hex(okm, "8da4e775a563c18f715f802a063c5a31b8a11f5c5ee1879ec3454e5f3c738d2d9d201395faa4b61a96c8") {
+        return false;
+    }
     let empty = keccak256::hash("");
     if !keccak256::eq_hex(empty, "c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470") {
         return false;
@@ -218,6 +274,12 @@ fn ::main() {
     var sink: u64 = 0;
     sink += row("sha256 32B", 64, 250, sha32);
     sink += row("sha256 4KB", 16, 250, sha4k);
+    sink += row("sha512 32B", 64, 250, sha512_32);
+    sink += row("sha512 4KB", 16, 250, sha512_4k);
+    sink += row("ripemd160 32B", 64, 250, ripe32);
+    sink += row("ripemd160 4KB", 16, 250, ripe4k);
+    sink += row("hkdf extract", 64, 250, hkdf_extract);
+    sink += row("hkdf expand 32B", 64, 250, hkdf_expand);
     sink += row("keccak256 empty", 64, 250, kec0);
     sink += row("keccak256 32B", 64, 250, kec32);
     sink += row("keccak256 4KB", 16, 250, kec4k);
