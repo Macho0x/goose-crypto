@@ -2,7 +2,8 @@
 // transactions, EIP-155, and typed transactions 0x01, 0x02, 0x03, 0x04.
 // An EIP-7702 authorization is the 0x05 payload. Blob sidecars are not
 // encoded: type 0x03 hashes the versioned hashes only. Typed y-parity is
-// 0 or 1. Legacy v is 27 or 28, or chainId * 2 + 35 + recid under EIP-155.
+// v - 27, so 0..3. Legacy v is 27..30, and EIP-155 v is
+// chainId * 2 + 35 + recid. Ethereum consensus accepts recid 0 and 1 only.
 
 import std;
 import keccak256;
@@ -87,7 +88,7 @@ fn hash_typed(ty: u8, list: u8[:]) -> u8[32] {
 
 fn sign_hash(secret: u8[:], dig: u8[:]) -> u8[65], bool {
     let sig, ok, v = secp256k1::sign(secret, dig);
-    if !ok || v < 27 || v > 28 { return [0; 65], false; }
+    if !ok || v < 27 || v > 30 { return [0; 65], false; }
     var out: u8[65] = [0; 65];
     for i in 0..64 { out[i] = sig[i]; }
     out[64] = v;
@@ -268,6 +269,7 @@ fn self_check() -> bool {
     let t4_list = wrap(t4);
     if !hash_typed(4, t4_list).eq_hex("aff5dd5b3a1de0d8e5fe43108ff4ff0f8a25893ca3db7bb5e9e373a04c4b0442") { return false; }
 
+    if eip155_v(1337, 29) != 2711 || eip155_v(1337, 30) != 2712 { return false; }
     let sig, ok = sign_hash(secret, hash_legacy(leg_list));
     if !ok { return false; }
     var signed_leg: u8[>..] = [];

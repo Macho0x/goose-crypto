@@ -19,31 +19,33 @@ import btc_taproot;
 import bip322;
 import solana;
 
-fn go(name: u8[:], ok: bool) {
+fn go(name: u8[:], ok: bool) -> bool {
     var line: u8[>..] = [];
     format(line, name);
     if ok { format(line, " ok\n"); } else { format(line, " FAIL\n"); }
     write_stdout(line);
-    if !ok { exit(1); }
+    return ok;
 }
 
 fn ::main() {
-    go("sha256", sha256::self_check());
-    go("keccak256", keccak256::self_check());
-    go("blake3", blake3::self_check());
-    go("chacha20poly1305", chacha20poly1305::self_check());
-    go("x25519", x25519::self_check());
-    go("ed25519", ed25519::self_check());
-    go("secp256k1", secp256k1::self_check());
-    go("argon2id", argon2id::self_check());
-    go("eip712", eip712::self_check());
-    go("eip191", eip191::self_check());
-    go("eth_tx", eth_tx::self_check());
-    go("bip340", bip340::self_check());
-    go("btc_legacy", btc_legacy::self_check());
-    go("btc_segwit", btc_segwit::self_check());
-    go("btc_taproot", btc_taproot::self_check());
-    go("bip322", bip322::self_check());
-    go("solana", solana::self_check());
+    var all = true;
+    if !go("sha256", sha256::self_check()) { all = false; }
+    if !go("keccak256", keccak256::self_check()) { all = false; }
+    if !go("blake3", blake3::self_check()) { all = false; }
+    if !go("chacha20poly1305", chacha20poly1305::self_check()) { all = false; }
+    if !go("x25519", x25519::self_check()) { all = false; }
+    if !go("ed25519", ed25519::self_check()) { all = false; }
+    if !go("secp256k1", secp256k1::self_check()) { all = false; }
+    if !go("argon2id", argon2id::self_check()) { all = false; }
+    if !go("eip712", eip712::self_check()) { all = false; }
+    if !go("eip191", eip191::self_check()) { all = false; }
+    if !go("eth_tx", eth_tx::self_check()) { all = false; }
+    if !go("bip340", bip340::self_check()) { all = false; }
+    if !go("btc_legacy", btc_legacy::self_check()) { all = false; }
+    if !go("btc_segwit", btc_segwit::self_check()) { all = false; }
+    if !go("btc_taproot", btc_taproot::self_check()) { all = false; }
+    if !go("bip322", bip322::self_check()) { all = false; }
+    if !go("solana", solana::self_check()) { all = false; }
+    if !all { exit(1); }
     write_stdout("crypto ok\n");
 }

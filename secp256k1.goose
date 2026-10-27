@@ -464,6 +464,7 @@ fn verify(public: u8[:], digest: u8[:], sig: u8[:]) -> bool {
     let r = load_be(sig[..32]);
     let s = load_be(sig[32..]);
     if is_zero(r) || gte8(r, order()) || is_zero(s) || gte8(s, order()) { return false; }
+    if !gte8(half_n(), s) { return false; }
     let w = sc_inv(s);
     var e = load_be(digest);
     if gte8(e, order()) { e = sub8(e, order()); }
@@ -512,6 +513,9 @@ fn self_check() -> bool {
     let sig, sok, _ = sign(one, digest);
     if !sok || !sig.eq_hex("77c8d336572f6f466055b5f70f433851f8f535f6c4fc71133a6cfd71079d03b70ed9f5eb8aa5b266abac35d416c3207e7a538bf5f37649727d7a9823b1069577") { return false; }
     if !verify(pk, digest, sig) { return false; }
+    var high: u8[64] = sig;
+    store_be(sub8(order(), load_be(high[32..])), high[32..]);
+    if verify(pk, digest, high) { return false; }
     let raw, rok = pubkey_uncompressed(one);
     if !rok || !verify(raw, digest, sig) { return false; }
     sig[63] ^= 1;

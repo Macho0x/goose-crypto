@@ -68,28 +68,8 @@ goose build -o crypto-bench bench.goose --cc gcc
 ./crypto-bench
 ```
 
-`goose bench.goose` is the same program through TinyCC, which is how `goose file.goose` runs a module. One batch runs untimed. Further batches run until the window elapses, and the clock calls sit outside the timed section. Hashes use a batch of 64 and a 250 ms window. The 4 KB hashes and the AEAD use a batch of 16. X25519, Ed25519, and Argon2id use one call and a 400 ms window. secp256k1, BIP-340, and EIP-191 use one call and a 2 s window. Each call contributes a result byte to a sink printed at the end, so the compiler has to do the work. `secp256k1 verify` decompresses a compressed public key. The Argon2id row is the module's published vector, 32 KiB, 3 passes, 4 lanes, not a production memory setting. A TinyCC signature that lasts longer than the window is a single timed call.
+`goose bench.goose` is the same program through TinyCC, which is how `goose file.goose` runs a module.
 
-Measured on 27 October 2026, Intel i7-1165G7, Goose `64d62fc`, gcc 16.2.1.
+The implementations are straight-line Goose: schoolbook field multiplication, no assembly, and no precomputed tables. Timings depend on the machine and the Goose commit, so this page does not publish them. Run the bench above on the machine you care about. Faster code is welcome when `goose self_check.goose` still prints `crypto ok`.
 
-| Operation | gcc | TinyCC |
-| --- | ---: | ---: |
-| sha256 32B | 426 ns | 2.28 µs |
-| sha256 4KB | 26.6 µs | 125 µs |
-| keccak256 empty | 3.04 µs | 17.2 µs |
-| keccak256 32B | 3.11 µs | 15.3 µs |
-| keccak256 4KB | 99.8 µs | 467 µs |
-| blake3 32B | 339 ns | 4.57 µs |
-| blake3 4KB | 15.5 µs | 192 µs |
-| chacha20poly1305 seal 32B | 466 ns | 5.88 µs |
-| x25519 public | 891 µs | 5.16 ms |
-| ed25519 sign | 3.72 ms | 22.2 ms |
-| ed25519 verify | 4.23 ms | 25.5 ms |
-| secp256k1 sign | 242 ms | 1.72 s |
-| secp256k1 verify | 470 ms | 3.41 s |
-| bip340 sign | 459 ms | 3.27 s |
-| bip340 verify | 453 ms | 3.29 s |
-| eip191 personal_sign | 239 ms | 1.71 s |
-| argon2id 32KiB t=3 p=4 | 241 µs | 2.47 ms |
-
-[eth.zig](https://github.com/StrobeLabs/eth.zig) publishes a comparison with alloy.rs. Those figures are from another machine, and that library vendors libsecp256k1 and XKCP Keccak. Run `bench.goose` on the machine you care about.
+[eth.zig](https://github.com/StrobeLabs/eth.zig) publishes a comparison with alloy.rs. Those figures are from another machine, and that library vendors libsecp256k1 and XKCP Keccak.

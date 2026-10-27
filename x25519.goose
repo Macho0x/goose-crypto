@@ -291,7 +291,15 @@ fn base_point() -> u8[32] {
 
 fn public_key(secret: u8[:]) -> u8[32], bool { return scalarmult(secret, base_point()); }
 
-fn shared(secret: u8[:], peer: u8[:]) -> u8[32], bool { return scalarmult(secret, peer); }
+fn shared(secret: u8[:], peer: u8[:]) -> u8[32], bool {
+    let out, ok = scalarmult(secret, peer);
+    if !ok { return [0; 32], false; }
+    // RFC 7748: a shared secret of all zeros is a degenerate result.
+    for i in 0..32 {
+        if out[i] != 0 { return out, true; }
+    }
+    return [0; 32], false;
+}
 
 fn nibble(c: u8) -> u8 {
     if c >= '0' && c <= '9' { return c - '0'; }
@@ -330,6 +338,9 @@ fn self_check() -> bool {
     let s2, ok2 = shared(bob_s, alice_p);
     if !ok1 || !ok2 || !s1.eq_hex("4a5d9d5ba4ce2de1728e3bf480350f25e07e21c947d19e3376f09b3c1e161742") { return false; }
     if s1 != s2 { return false; }
+    var zeros: u8[32] = [0; 32];
+    let _, zok = shared(alice_s, zeros);
+    if zok { return false; }
     let back = fe_to_bytes(fe_from_bytes(alice_p));
     if back != alice_p { return false; }
     return true;
