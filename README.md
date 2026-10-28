@@ -1,6 +1,6 @@
 # goose-crypto
 
-Version 0.12.
+Version 0.13.
 
 Hashes, public-key cryptography, and transaction signing in [Goose](https://github.com/aardappel/goose). The implementations are Goose, with no foreign calls and no vendored C. Every module checks itself against a published test vector.
 
@@ -48,7 +48,7 @@ fn main() {
 | `chacha20poly1305` | ChaCha20-Poly1305, the ChaCha20 stream, and Poly1305 |
 | `x25519` | X25519 |
 | `ed25519` | Ed25519 |
-| `secp256k1` | ECDSA with an RFC 6979 nonce, low-s, recovery id 27..30 |
+| `secp256k1` | ECDSA with an RFC 6979 nonce, low-s, recover, recovery id 27..30 |
 | `argon2id` | Argon2id |
 | `eip191` | `personal_sign` |
 | `eip712` | Typed-data digest and signature |

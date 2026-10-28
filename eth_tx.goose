@@ -298,6 +298,9 @@ fn self_check() -> bool {
 
     let sig3, ok3 = sign_hash(secret2, hash_typed(5, auth_list));
     if !ok3 || sig3[64] != 27 || !sig3[..64].eq_hex("735375048fc96b87390b5a11c411fc57245d8e55038bf49e659d048a0d1a3f877f4b3db448845cb217812f23c6b345e99f2d21c44ec10e93a8f0398141674171") { return false; }
+    let pk2, p2ok = secp256k1::pubkey_uncompressed(secret2);
+    let back, bok = secp256k1::recover(hash_typed(5, auth_list), sig3);
+    if !p2ok || !bok || back != pk2 { return false; }
     let sig4, ok4 = sign_hash(secret2, hash_typed(4, t4_list));
     if !ok4 || sig4[64] != 27 || !sig4[..64].eq_hex("03df7bf9b159102517af620ce9628e6e410fb4e344401fbc751d1a08ecdf1421211891d57b39127b3543100711f0b414e2859e14725b7dfcafe954b17ce8762a") { return false; }
     let sig5, ok5 = sign_hash(secret, hash_typed(3, t3_list));

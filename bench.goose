@@ -35,6 +35,7 @@ var asecret: u8[8] = [0x03; 8];
 var ad: u8[12] = [0x04; 12];
 var secp_pk: u8[33] = [0; 33];
 var secp_sig: u8[64] = [0; 64];
+var secp_rec: u8[65] = [0; 65];
 var ed_pub: u8[32] = [0; 32];
 var ed_sig: u8[64] = [0; 64];
 var bip_pk: u8[32] = [0; 32];
@@ -196,6 +197,11 @@ fn secp_verify() -> u64 {
     return mark(1, secp256k1::verify(secp_pk, dig, secp_sig));
 }
 
+fn secp_recover() -> u64 {
+    let pk, ok = secp256k1::recover(dig, secp_rec);
+    return mark(pk[0], ok);
+}
+
 fn bip_sign() -> u64 {
     live[0] += 1;
     let sig, ok = bip340::sign(secret, live, aux);
@@ -241,9 +247,11 @@ fn ready() -> bool {
     let pk, pok = secp256k1::pubkey_compressed(secret);
     if !pok { return false; }
     copy_at(secp_pk, pk);
-    let sig, ok, _ = secp256k1::sign(secret, dig);
+    let sig, ok, v = secp256k1::sign(secret, dig);
     if !ok || !secp256k1::verify(secp_pk, dig, sig) { return false; }
     copy_at(secp_sig, sig);
+    copy_at(secp_rec, sig);
+    secp_rec[64] = v;
     let ep, eok = ed25519::public_key(secret);
     if !eok { return false; }
     copy_at(ed_pub, ep);
@@ -259,7 +267,8 @@ fn ready() -> bool {
     let ps, pok2 = eip191::sign(secret, "hello world");
     if !pok2 { return false; }
     let upk, uok = secp256k1::pubkey_uncompressed(secret);
-    if !uok || !eip191::verify(upk, "hello world", ps) { return false; }
+    let got, gok = secp256k1::recover(dig, secp_rec);
+    if !uok || !gok || got != upk || !eip191::verify(upk, "hello world", ps) { return false; }
     var tag: u8[32] = [0; 32];
     if !argon2id::hash(pw, salt, asecret, ad, 32, 3, 4, tag) { return false; }
     if !argon2id::eq_hex(tag, "0d640df58d78766c08c037a34a8b53c9d01ef0452d75b65eb52520e96b01e659") {
@@ -291,6 +300,7 @@ fn ::main() {
     sink += row("ed25519 verify", 1, 400, ed_verify);
     sink += row("secp256k1 sign", 1, 2000, secp_sign);
     sink += row("secp256k1 verify", 1, 2000, secp_verify);
+    sink += row("secp256k1 recover", 1, 2000, secp_recover);
     sink += row("bip340 sign", 1, 2000, bip_sign);
     sink += row("bip340 verify", 1, 2000, bip_verify);
     sink += row("eip191 personal_sign", 1, 2000, personal);

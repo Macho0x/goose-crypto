@@ -139,7 +139,7 @@ fn self_check() -> bool {
     write_at(dom, 128, con_w);
     let sep, sok = hash_encoded(dom);
     if !fok || !tok || !mok || !sok { return false; }
-    let _, dok = digest(sep, msg);
+    let dig, dok = digest(sep, msg);
     if !dok { return false; }
     var secret: u8[32] = [0; 32];
     unhex("c85ef7d79691fe79573b1a7064c19c1a9819ebdbd1faaab1a8ec92344438aaf4", secret);
@@ -150,6 +150,8 @@ fn self_check() -> bool {
     if !word_hash(xy)[12..].eq_hex("cd2a3d9f938e13cd947ec05abc7fe734df8dd826") { return false; }
     let sig, sigok = sign(secret, sep, msg);
     if !sigok || !sig.eq_hex("4355c47d63924e8a72e509b65029052eb6c299d53a04e167c5775fd466751c9d07299936d304c153f6443dfa05f40ff007d72911b6f72307f996231605b915621c") { return false; }
+    let rec, rok = secp256k1::recover(dig, sig);
+    if !rok || rec != raw { return false; }
     let pk, pkok = secp256k1::pubkey_compressed(secret);
     if !pkok || !verify(pk, sep, msg, sig) { return false; }
     sig[64] = 26;

@@ -476,6 +476,40 @@ fn verify(public: u8[:], digest: u8[:], sig: u8[:]) -> bool {
     return xr == r;
 }
 
+fn recover(digest: u8[:], sig: u8[:]) -> u8[65], bool {
+    if digest.len != 32 || sig.len != 65 { return [0; 65], false; }
+    if sig[64] < 27 || sig[64] > 30 { return [0; 65], false; }
+    let r = load_be(sig[..32]);
+    let s = load_be(sig[32..64]);
+    if is_zero(r) || gte8(r, order()) || is_zero(s) || gte8(s, order()) { return [0; 65], false; }
+    if !gte8(half_n(), s) { return [0; 65], false; }
+    let rec = sig[64] - 27;
+    var x = r;
+    if (rec >> 1) == 1 {
+        if gte8(r, sub8(prime(), order())) { return [0; 65], false; }
+        x = fe_add(r, order());
+    }
+    var comp: u8[33] = [2; 33];
+    if (rec & 1) == 1 { comp[0] = 3; }
+    store_be(x, comp[1..]);
+    let point, pok = decompress(comp);
+    if !pok { return [0; 65], false; }
+    var e = load_be(digest);
+    if gte8(e, order()) { e = sub8(e, order()); }
+    let w = sc_inv(r);
+    let u1 = sc_mul(e, w);
+    var neg = zero();
+    if !is_zero(u1) { neg = sub8(order(), u1); }
+    let q = pt_add(pt_mul(point, sc_mul(s, w)), pt_mul(base(), neg));
+    let xq, yq, aok = affine(q);
+    if !aok { return [0; 65], false; }
+    var out: u8[65] = [0; 65];
+    out[0] = 4;
+    store_be(xq, out[1..33]);
+    store_be(yq, out[33..]);
+    return out, true;
+}
+
 fn nibble(c: u8) -> u8 {
     if c >= '0' && c <= '9' { return c - '0'; }
     if c >= 'a' && c <= 'f' { return c - 'a' + 10; }
@@ -510,7 +544,7 @@ fn self_check() -> bool {
     if !okn || !pkn.eq_hex("0379be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798") { return false; }
     var digest: u8[32] = [0; 32];
     unhex("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", digest);
-    let sig, sok, _ = sign(one, digest);
+    let sig, sok, v = sign(one, digest);
     if !sok || !sig.eq_hex("77c8d336572f6f466055b5f70f433851f8f535f6c4fc71133a6cfd71079d03b70ed9f5eb8aa5b266abac35d416c3207e7a538bf5f37649727d7a9823b1069577") { return false; }
     if !verify(pk, digest, sig) { return false; }
     var high: u8[64] = sig;
@@ -518,6 +552,19 @@ fn self_check() -> bool {
     if verify(pk, digest, high) { return false; }
     let raw, rok = pubkey_uncompressed(one);
     if !rok || !verify(raw, digest, sig) { return false; }
+    var full: u8[65] = [0; 65];
+    for i in 0..64 { full[i] = sig[i]; }
+    full[64] = v;
+    let got, gok = recover(digest, full);
+    if !gok || got != raw { return false; }
+    var high65: u8[65] = [0; 65];
+    for i in 0..64 { high65[i] = high[i]; }
+    high65[64] = v;
+    let _, hok = recover(digest, high65);
+    if hok { return false; }
+    full[64] = 26;
+    let _, vok = recover(digest, full);
+    if vok { return false; }
     sig[63] ^= 1;
     if verify(pk, digest, sig) { return false; }
     return true;
