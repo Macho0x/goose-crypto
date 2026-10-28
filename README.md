@@ -1,6 +1,6 @@
 # goose-crypto
 
-Version 0.13.
+Version 0.14.
 
 Hashes, public-key cryptography, and transaction signing in [Goose](https://github.com/aardappel/goose). The implementations are Goose, with no foreign calls and no vendored C. Every module checks itself against a published test vector.
 
@@ -75,6 +75,6 @@ goose build -o crypto-bench bench.goose --cc gcc
 
 `goose bench.goose` is the same program through TinyCC, which is how `goose file.goose` runs a module.
 
-The implementations are straight-line Goose: schoolbook field multiplication, no assembly, and no precomputed tables. Timings depend on the machine and the Goose commit, so this page does not publish them. Run the bench above on the machine you care about. Faster code is welcome when `goose self_check.goose` still prints `crypto ok`.
+secp256k1 reduces products by the field prime and the group order, and multiplies the generator from a precomputed comb. Keccak absorbs eight bytes at a time. The other modules are straight-line Goose. There is no assembly. Timings depend on the machine and the Goose commit, so this page does not publish them. Run the bench above on the machine you care about. Faster code is welcome when `goose self_check.goose` still prints `crypto ok`.
 
 [eth.zig](https://github.com/StrobeLabs/eth.zig) publishes a comparison with alloy.rs. Those figures are from another machine, and that library vendors libsecp256k1 and XKCP Keccak.

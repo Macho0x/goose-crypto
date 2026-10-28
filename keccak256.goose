@@ -17,16 +17,6 @@ const RNDC: u64[24] = [
     0x8000000080008081, 0x8000000000008080, 0x0000000080000001, 0x8000000080008008,
 ];
 
-const ROTC: i64[24] = [
-    1, 3, 6, 10, 15, 21, 28, 36, 45, 55, 2, 14,
-    27, 41, 56, 8, 25, 43, 62, 18, 39, 61, 20, 44,
-];
-
-const PILN: i64[24] = [
-    10, 7, 11, 17, 18, 3, 5, 16, 8, 21, 24, 4,
-    15, 23, 19, 13, 12, 2, 20, 14, 22, 9, 6, 1,
-];
-
 struct Ctx {
     st: u64[25],
     buf: u8[RATE],
@@ -35,43 +25,158 @@ struct Ctx {
 
 fn rotl(x: u64, n: i64) -> u64 { (x << n) | (x >> (64 - n)) }
 
+fn chi(st: u64[25]&, o: i64) {
+    let a = st[o];
+    let b = st[o + 1];
+    let c = st[o + 2];
+    let d = st[o + 3];
+    let e = st[o + 4];
+    st[o] ^= (~b) & c;
+    st[o + 1] ^= (~c) & d;
+    st[o + 2] ^= (~d) & e;
+    st[o + 3] ^= (~e) & a;
+    st[o + 4] ^= (~a) & b;
+}
+
+fn step(st: u64[25]&, rc: u64) {
+    let b0 = st[0] ^ st[5] ^ st[10] ^ st[15] ^ st[20];
+    let b1 = st[1] ^ st[6] ^ st[11] ^ st[16] ^ st[21];
+    let b2 = st[2] ^ st[7] ^ st[12] ^ st[17] ^ st[22];
+    let b3 = st[3] ^ st[8] ^ st[13] ^ st[18] ^ st[23];
+    let b4 = st[4] ^ st[9] ^ st[14] ^ st[19] ^ st[24];
+    let t0 = b4 ^ rotl(b1, 1);
+    let t1 = b0 ^ rotl(b2, 1);
+    let t2 = b1 ^ rotl(b3, 1);
+    let t3 = b2 ^ rotl(b4, 1);
+    let t4 = b3 ^ rotl(b0, 1);
+    st[0] ^= t0;
+    st[5] ^= t0;
+    st[10] ^= t0;
+    st[15] ^= t0;
+    st[20] ^= t0;
+    st[1] ^= t1;
+    st[6] ^= t1;
+    st[11] ^= t1;
+    st[16] ^= t1;
+    st[21] ^= t1;
+    st[2] ^= t2;
+    st[7] ^= t2;
+    st[12] ^= t2;
+    st[17] ^= t2;
+    st[22] ^= t2;
+    st[3] ^= t3;
+    st[8] ^= t3;
+    st[13] ^= t3;
+    st[18] ^= t3;
+    st[23] ^= t3;
+    st[4] ^= t4;
+    st[9] ^= t4;
+    st[14] ^= t4;
+    st[19] ^= t4;
+    st[24] ^= t4;
+    var t = st[1];
+    var n = st[10];
+    st[10] = rotl(t, 1);
+    t = n;
+    n = st[7];
+    st[7] = rotl(t, 3);
+    t = n;
+    n = st[11];
+    st[11] = rotl(t, 6);
+    t = n;
+    n = st[17];
+    st[17] = rotl(t, 10);
+    t = n;
+    n = st[18];
+    st[18] = rotl(t, 15);
+    t = n;
+    n = st[3];
+    st[3] = rotl(t, 21);
+    t = n;
+    n = st[5];
+    st[5] = rotl(t, 28);
+    t = n;
+    n = st[16];
+    st[16] = rotl(t, 36);
+    t = n;
+    n = st[8];
+    st[8] = rotl(t, 45);
+    t = n;
+    n = st[21];
+    st[21] = rotl(t, 55);
+    t = n;
+    n = st[24];
+    st[24] = rotl(t, 2);
+    t = n;
+    n = st[4];
+    st[4] = rotl(t, 14);
+    t = n;
+    n = st[15];
+    st[15] = rotl(t, 27);
+    t = n;
+    n = st[23];
+    st[23] = rotl(t, 41);
+    t = n;
+    n = st[19];
+    st[19] = rotl(t, 56);
+    t = n;
+    n = st[13];
+    st[13] = rotl(t, 8);
+    t = n;
+    n = st[12];
+    st[12] = rotl(t, 25);
+    t = n;
+    n = st[2];
+    st[2] = rotl(t, 43);
+    t = n;
+    n = st[20];
+    st[20] = rotl(t, 62);
+    t = n;
+    n = st[14];
+    st[14] = rotl(t, 18);
+    t = n;
+    n = st[22];
+    st[22] = rotl(t, 39);
+    t = n;
+    n = st[9];
+    st[9] = rotl(t, 61);
+    t = n;
+    n = st[6];
+    st[6] = rotl(t, 20);
+    t = n;
+    n = st[1];
+    st[1] = rotl(t, 44);
+    chi(st, 0);
+    chi(st, 5);
+    chi(st, 10);
+    chi(st, 15);
+    chi(st, 20);
+    st[0] ^= rc;
+}
+
 fn permute(st: u64[25]&) {
-    for round in 0..24 {
-        var bc: u64[5] = [0; 5];
-        for i in 0..5 {
-            bc[i] = st[i] ^ st[i + 5] ^ st[i + 10] ^ st[i + 15] ^ st[i + 20];
-        }
-        for i in 0..5 {
-            let t = bc[(i + 4) % 5] ^ rotl(bc[(i + 1) % 5], 1);
-            var j = 0;
-            while j < 25 {
-                st[j + i] ^= t;
-                j += 5;
-            }
-        }
-        var t = st[1];
-        for i in 0..24 {
-            let j = PILN[i];
-            let nxt = st[j];
-            st[j] = rotl(t, ROTC[i]);
-            t = nxt;
-        }
-        var j = 0;
-        while j < 25 {
-            var col: u64[5] = [0; 5];
-            for i in 0..5 { col[i] = st[j + i]; }
-            for i in 0..5 {
-                st[j + i] ^= (~col[(i + 1) % 5]) & col[(i + 2) % 5];
-            }
-            j += 5;
-        }
-        st[0] ^= RNDC[round];
-    }
+    for round in 0..24 { step(st, RNDC[round]); }
 }
 
 fn xor_buf(st: u64[25]&, buf: u8[:]) {
-    for i in 0..buf.len {
-        st[i / 8] ^= (buf[i] as u64) << ((i % 8) * 8);
+    var i = 0;
+    let full = buf.len - buf.len % 8;
+    while i < full {
+        let b0: u64 = buf[i];
+        let b1: u64 = buf[i + 1];
+        let b2: u64 = buf[i + 2];
+        let b3: u64 = buf[i + 3];
+        let b4: u64 = buf[i + 4];
+        let b5: u64 = buf[i + 5];
+        let b6: u64 = buf[i + 6];
+        let b7: u64 = buf[i + 7];
+        st[i / 8] ^= b0 | (b1 << 8) | (b2 << 16) | (b3 << 24) | (b4 << 32) | (b5 << 40) | (b6 << 48) | (b7 << 56);
+        i += 8;
+    }
+    while i < buf.len {
+        let b: u64 = buf[i];
+        st[i / 8] ^= b << ((i % 8) * 8);
+        i += 1;
     }
 }
 
