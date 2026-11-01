@@ -247,18 +247,53 @@ fn fe_sqr(a: u32[8]) -> u32[8] {
     return fe_reduce(w);
 }
 
+fn fe_sqn(a: u32[8], n: i64) -> u32[8] {
+    var r = a;
+    for i in 0..n { r = fe_sqr(r); }
+    return r;
+}
+
+// Public exponent. A 4-bit window, skipping leading zero digits.
 fn fe_pow(a: u32[8], e: u32[8]) -> u32[8] {
+    var pre: u32[8][16];
+    pre[0] = one();
+    pre[1] = a;
+    for i in 2..16 { pre[i] = fe_mul(pre[i - 1], a); }
     var r = one();
-    for step in 0..256 {
-        r = fe_sqr(r);
-        let i = 255 - step;
-        if ((e[i / 32] >> (i % 32)) & 1) == 1 { r = fe_mul(r, a); }
+    var started = false;
+    for step in 0..64 {
+        let i = 63 - step;
+        let nib = (e[i / 8] >> ((i % 8) * 4)) & 0xf;
+        if started {
+            r = fe_sqn(r, 4);
+            r = fe_mul(r, pre[nib]);
+        } else if nib != 0 {
+            r = pre[nib];
+            started = true;
+        }
     }
     return r;
 }
 
+// a^(p-2). Bits 33..255 are set, bit 32 is clear, and bits 0..31 are 0xfffffc2d.
 fn fe_inv(a: u32[8]) -> u32[8] {
-    fe_pow(a, [0xfffffc2d, 0xfffffffe, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff])
+    let e1 = a;
+    let e2 = fe_mul(fe_sqr(e1), e1);
+    let e4 = fe_mul(fe_sqn(e2, 2), e2);
+    let e8 = fe_mul(fe_sqn(e4, 4), e4);
+    let e16 = fe_mul(fe_sqn(e8, 8), e8);
+    let e32 = fe_mul(fe_sqn(e16, 16), e16);
+    let e64 = fe_mul(fe_sqn(e32, 32), e32);
+    let e128 = fe_mul(fe_sqn(e64, 64), e64);
+    var r = e128;
+    r = fe_mul(fe_sqn(r, 64), e64);
+    r = fe_mul(fe_sqn(r, 16), e16);
+    r = fe_mul(fe_sqn(r, 8), e8);
+    r = fe_mul(fe_sqn(r, 4), e4);
+    r = fe_mul(fe_sqn(r, 2), e2);
+    r = fe_mul(fe_sqr(r), e1);
+    r = fe_sqn(r, 33);
+    return fe_mul(r, fe_pow(a, [0xfffffc2d, 0, 0, 0, 0, 0, 0, 0]));
 }
 
 fn sc_add(a: u32[8], b: u32[8]) -> u32[8] {
@@ -298,15 +333,35 @@ fn sc_mul(a: u32[8], b: u32[8]) -> u32[8] {
     return sc_reduce(w);
 }
 
-fn sc_inv(a: u32[8]) -> u32[8] {
-    let e: u32[8] = [0xd036413f, 0xbfd25e8c, 0xaf48a03b, 0xbaaedce6, 0xfffffffe, 0xffffffff, 0xffffffff, 0xffffffff];
+fn sc_sqn(a: u32[8], n: i64) -> u32[8] {
+    var r = a;
+    for i in 0..n { r = sc_mul(r, r); }
+    return r;
+}
+
+fn sc_pow(a: u32[8], e: u32[8]) -> u32[8] {
+    var pre: u32[8][16];
+    pre[0] = one();
+    pre[1] = a;
+    for i in 2..16 { pre[i] = sc_mul(pre[i - 1], a); }
     var r = one();
-    for step in 0..256 {
-        r = sc_mul(r, r);
-        let i = 255 - step;
-        if ((e[i / 32] >> (i % 32)) & 1) == 1 { r = sc_mul(r, a); }
+    var started = false;
+    for step in 0..64 {
+        let i = 63 - step;
+        let nib = (e[i / 8] >> ((i % 8) * 4)) & 0xf;
+        if started {
+            r = sc_sqn(r, 4);
+            r = sc_mul(r, pre[nib]);
+        } else if nib != 0 {
+            r = pre[nib];
+            started = true;
+        }
     }
     return r;
+}
+
+fn sc_inv(a: u32[8]) -> u32[8] {
+    sc_pow(a, [0xd036413f, 0xbfd25e8c, 0xaf48a03b, 0xbaaedce6, 0xfffffffe, 0xffffffff, 0xffffffff, 0xffffffff])
 }
 
 fn infinity() -> Pt { Pt { [0; 8], [0; 8], [0; 8] } }

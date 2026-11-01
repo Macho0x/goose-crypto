@@ -175,16 +175,31 @@ fn fe_mul_small(a: Fe, n: u64) -> Fe {
     return fe_mul(a, b);
 }
 
-// a^(2^255-21) = a^(p-2).
-fn fe_inv(a: Fe) -> Fe {
-    var r = fe_one();
-    for step in 0..255 {
-        let i = 254 - step;
-        r = fe_sqr(r);
-        let bit = if i >= 8 { 1 } else { (0xeb >> i) & 1 };
-        if bit == 1 { r = fe_mul(r, a); }
-    }
+fn fe_sqn(a: Fe, n: i64) -> Fe {
+    var r = a;
+    for i in 0..n { r = fe_sqr(r); }
     return r;
+}
+
+// a^(p-2) = a^(2^255-21). The top 250 bits of the exponent are 1 and the low bits are 01011.
+fn fe_inv(a: Fe) -> Fe {
+    let o1 = a;
+    let o2 = fe_mul(fe_sqr(o1), o1);
+    let o4 = fe_mul(fe_sqn(o2, 2), o2);
+    let o8 = fe_mul(fe_sqn(o4, 4), o4);
+    let o16 = fe_mul(fe_sqn(o8, 8), o8);
+    let o32 = fe_mul(fe_sqn(o16, 16), o16);
+    let o64 = fe_mul(fe_sqn(o32, 32), o32);
+    let o128 = fe_mul(fe_sqn(o64, 64), o64);
+    var r = o128;
+    r = fe_mul(fe_sqn(r, 64), o64);
+    r = fe_mul(fe_sqn(r, 32), o32);
+    r = fe_mul(fe_sqn(r, 16), o16);
+    r = fe_mul(fe_sqn(r, 8), o8);
+    r = fe_mul(fe_sqn(r, 2), o2);
+    let a2 = fe_sqr(a);
+    let a11 = fe_mul(fe_mul(fe_sqr(fe_sqr(a2)), a2), a);
+    return fe_mul(fe_sqn(r, 5), a11);
 }
 
 fn load64(b: u8[:], i: i64) -> u64 {

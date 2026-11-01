@@ -24,8 +24,8 @@ fn unhex(hex: u8[:], out: u8[:]) {
 
 fn self_check() -> bool {
     let d = ed_d();
-    let bp, bok = base(d);
-    if !bok || !encode(bp).eq_hex("5866666666666666666666666666666666666666666666666666666666666666") { return false; }
+    let bp = base();
+    if !encode(bp).eq_hex("5866666666666666666666666666666666666666666666666666666666666666") { return false; }
     var one: u8[32] = [0; 32];
     one[0] = 1;
     if encode(pt_mul(bp, one, d)) != encode(bp) { return false; }
@@ -46,6 +46,15 @@ fn self_check() -> bool {
     if !verify(pk2, msg, sig2) { return false; }
     sig2[0] ^= 1;
     if verify(pk2, msg, sig2) { return false; }
+    var seed3: u8[32] = [0; 32];
+    unhex("c5aa8df43f9f837bedb7442f31dcb7b166d38535076f094b85ce3a2e0b4458f7", seed3);
+    let pk3, ok3 = public_key(seed3);
+    if !ok3 || !pk3.eq_hex("fc51cd8e6218a1a38da47ed00230f0580816ed13ba3303ac5deb911548908025") { return false; }
+    var msg3: u8[2] = [0; 2];
+    unhex("af82", msg3);
+    let sig3, sok3 = sign(seed3, msg3);
+    if !sok3 || !sig3.eq_hex("6291d657deec24024827e69c3abe01a30ce548a284743a445e3680d7db5ac3ac18ff9b538d16f290ae67f760984dc6594a7c15e9716ed28dc027beceea1ec40a") { return false; }
+    if !verify(pk3, msg3, sig3) { return false; }
     return true;
 }
 

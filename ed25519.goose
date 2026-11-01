@@ -1,6 +1,7 @@
 // Ed25519 (RFC 8032). Point arithmetic is on the same 2^255-19 field as
 // X25519. Signatures are 64 bytes, R || S, with S reduced modulo L.
 // Reduction mod L blends with a mask instead of branching on the scalar.
+// Scalar multiplication is a 4-bit window, and the digit is chosen with a mask.
 
 import std;
 import x25519;
@@ -31,25 +32,37 @@ fn fsmall(n: u64) -> Fe {
 fn fneg(a: Fe) -> Fe { return fsub(f0(), a); }
 
 fn ed_d() -> Fe {
-    return fmul(fneg(fsmall(121665)), finv(fsmall(121666)));
+    Fe { [0x34dca135978a3, 0x1a8283b156ebd, 0x5e7a26001c029, 0x739c663a03cbb, 0x52036cee2b6ff] }
+}
+
+fn fsqn(a: Fe, n: i64) -> Fe {
+    var r = a;
+    for i in 0..n { r = fsqr(r); }
+    return r;
 }
 
 // a^((p+3)/8) = a^(2^252-2).
 fn fpow2523(a: Fe) -> Fe {
-    var z = a;
-    for i in 1..251 { z = fmul(fsqr(z), a); }
-    return fsqr(z);
+    let o1 = a;
+    let o2 = fmul(fsqr(o1), o1);
+    let o4 = fmul(fsqn(o2, 2), o2);
+    let o8 = fmul(fsqn(o4, 4), o4);
+    let o16 = fmul(fsqn(o8, 8), o8);
+    let o32 = fmul(fsqn(o16, 16), o16);
+    let o64 = fmul(fsqn(o32, 32), o32);
+    let o128 = fmul(fsqn(o64, 64), o64);
+    var r = o128;
+    r = fmul(fsqn(r, 64), o64);
+    r = fmul(fsqn(r, 32), o32);
+    r = fmul(fsqn(r, 16), o16);
+    r = fmul(fsqn(r, 8), o8);
+    r = fmul(fsqn(r, 2), o2);
+    r = fmul(fsqr(r), o1);
+    return fsqr(r);
 }
 
 fn sqrt_m1() -> Fe {
-    // 2^((p-1)/4) = 2^(2^253-5). Bits 0..252 of that exponent are set except bit 2.
-    let a = fsmall(2);
-    var r = f1();
-    for step in 0..253 {
-        r = fsqr(r);
-        if 252 - step != 2 { r = fmul(r, a); }
-    }
-    return r;
+    Fe { [0x61b274a0ea0b0, 0xd5a5fc8f189d, 0x7ef5e9cbd0c60, 0x78595a6804c9e, 0x2b8324804fc1d] }
 }
 
 fn same(a: Fe, b: Fe) -> bool { return fto(a) == fto(b); }
@@ -119,12 +132,27 @@ fn scalar_bit(s: u8[:], i: i64) -> u64 {
     return (byte >> (i % 8)) & 1;
 }
 
+fn pt_lookup(tab: Pt[:], nib: u64) -> Pt {
+    var r = tab[0];
+    for i in 1..16 {
+        let diff = nib ^ (i as u64);
+        let nz = (diff | (0 - diff)) >> 63;
+        r = pt_select(r, tab[i], 1 - nz);
+    }
+    return r;
+}
+
 fn pt_mul(p: Pt, s: u8[:], d: Fe) -> Pt {
+    var tab: Pt[16] = [pt_id(); 16];
+    tab[1] = p;
+    for i in 2..16 { tab[i] = pt_add(tab[i - 1], p, d); }
     var acc = pt_id();
-    for step in 0..256 {
-        acc = pt_dbl(acc);
-        let added = pt_add(acc, p, d);
-        acc = pt_select(acc, added, scalar_bit(s, 255 - step));
+    for w in 0..64 {
+        acc = pt_dbl(pt_dbl(pt_dbl(pt_dbl(acc))));
+        let low = 252 - w * 4;
+        let nib = scalar_bit(s, low) | (scalar_bit(s, low + 1) << 1) |
+            (scalar_bit(s, low + 2) << 2) | (scalar_bit(s, low + 3) << 3);
+        acc = pt_add(acc, pt_lookup(tab, nib), d);
     }
     return acc;
 }
@@ -152,11 +180,15 @@ fn decode(b: u8[:], d: Fe) -> Pt, bool {
     return Pt { x, y, f1(), fmul(x, y) }, true;
 }
 
-fn base(d: Fe) -> Pt, bool {
-    let y = fmul(fsmall(4), finv(fsmall(5)));
-    let x, ok = recover_x(y, 0, d);
-    if !ok { return pt_id(), false; }
-    return Pt { x, y, f1(), fmul(x, y) }, true;
+fn base() -> Pt {
+    let x = Fe { [0x62d608f25d51a, 0x412a4b4f6592a, 0x75b7171a4b31d, 0x1ff60527118fe, 0x216936d3cd6e5] };
+    let y = Fe { [0x6666666666658, 0x4cccccccccccc, 0x1999999999999, 0x3333333333333, 0x6666666666666] };
+    return Pt {
+        x,
+        y,
+        f1(),
+        Fe { [0x68ab3a5b7dda3, 0xeea2a5eadbb, 0x2af8df483c27e, 0x332b375274732, 0x67875f0fd78b7] },
+    };
 }
 
 // SHA-512 lives in sha512.goose. These wrap the two- and three-part hashes
@@ -339,9 +371,7 @@ fn public_key(seed: u8[:]) -> u8[32], bool {
     var a: u8[32] = [0; 32];
     clamp_scalar(h, a);
     let d = ed_d();
-    let bp, ok = base(d);
-    if !ok { return [0; 32], false; }
-    return encode(pt_mul(bp, a, d)), true;
+    return encode(pt_mul(base(), a, d)), true;
 }
 
 fn sign(seed: u8[:], msg: u8[:]) -> u8[64], bool {
@@ -350,8 +380,7 @@ fn sign(seed: u8[:], msg: u8[:]) -> u8[64], bool {
     var a: u8[32] = [0; 32];
     clamp_scalar(h, a);
     let d = ed_d();
-    let bp, ok = base(d);
-    if !ok { return [0; 64], false; }
+    let bp = base();
     let pub = encode(pt_mul(bp, a, d));
     let r_hash = h512_2(h[32..64], msg);
     let r = sc_to_bytes(sc_from64(r_hash));
@@ -368,6 +397,11 @@ fn sign(seed: u8[:], msg: u8[:]) -> u8[64], bool {
     return sig, true;
 }
 
+fn same_pt(p: Pt, q: Pt) -> bool {
+    if same(p.z, f0()) || same(q.z, f0()) { return false; }
+    return same(fmul(p.x, q.z), fmul(q.x, p.z)) && same(fmul(p.y, q.z), fmul(q.y, p.z));
+}
+
 fn verify(public: u8[:], msg: u8[:], sig: u8[:]) -> bool {
     if public.len != 32 || sig.len != 64 { return false; }
     if !sc_below_l(sig[32..64]) { return false; }
@@ -375,11 +409,9 @@ fn verify(public: u8[:], msg: u8[:], sig: u8[:]) -> bool {
     let a, aok = decode(public, d);
     let r, rok = decode(sig[..32], d);
     if !aok || !rok { return false; }
-    let bp, bok = base(d);
-    if !bok { return false; }
     let k_hash = h512_3(sig[..32], public, msg);
     let k = sc_to_bytes(sc_from64(k_hash));
-    let left = encode(pt_mul(bp, sig[32..64], d));
-    let right = encode(pt_add(r, pt_mul(a, k, d), d));
-    return left == right;
+    let left = pt_mul(base(), sig[32..64], d);
+    let right = pt_add(r, pt_mul(a, k, d), d);
+    return same_pt(left, right);
 }

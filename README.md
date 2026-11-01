@@ -1,6 +1,6 @@
 # goose-crypto
 
-Version 0.15.
+Version 0.16.
 
 Hashes, public-key cryptography, and transaction signing in [Goose](https://github.com/aardappel/goose). The implementations are Goose, with no foreign calls and no vendored C. The tests in `tests/` check each module against a published vector.
 
