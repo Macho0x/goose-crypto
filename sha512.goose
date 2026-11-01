@@ -29,8 +29,16 @@ const K: u64[80] = [
     0x4cc5d4becb3e42b6, 0x597f299cfc657e2a, 0x5fcb6fab3ad6faec, 0x6c44198c4a475817,
 ];
 
+const IV: u64[8] = [
+    0x6a09e667f3bcc908, 0xbb67ae8584caa73b, 0x3c6ef372fe94f82b, 0xa54ff53a5f1d36f1,
+    0x510e527fade682d1, 0x9b05688c2b3e6c1f, 0x1f83d9abfb41bd6b, 0x5be0cd19137e2179,
+];
+
+// The length field's low word holds the bit count. Messages stay under 2^61 bytes.
+const MAX_BYTES: u64 = 0x2000000000000000;
+
 struct Ctx {
-    h: u64[8],
+    h: u64[8] = IV,
     buf: u8[128],
     n: i64,
     bytes: u64,
@@ -38,89 +46,115 @@ struct Ctx {
 
 fn rotr(x: u64, n: u64) -> u64 { (x >> n) | (x << (64 - n)) }
 
+fn load_be64(s: u8[:], i: i64) -> u64 {
+    let c = s[i..i + 8];
+    return (c[0] as u64) << 56 | (c[1] as u64) << 48 | (c[2] as u64) << 40 | (c[3] as u64) << 32 |
+        (c[4] as u64) << 24 | (c[5] as u64) << 16 | (c[6] as u64) << 8 | c[7];
+}
+
+inline fn round(a: u64&, b: u64&, c: u64&, d: u64&, e: u64&, f: u64&, g: u64&, h: u64&, k: u64, x: u64) {
+    let t1 = h + (rotr(e, 14) ^ rotr(e, 18) ^ rotr(e, 41)) + (g ^ (e & (f ^ g))) + k + x;
+    let t2 = (rotr(a, 28) ^ rotr(a, 34) ^ rotr(a, 39)) + ((a & b) | (c & (a | b)));
+    h = g;
+    g = f;
+    f = e;
+    e = d + t1;
+    d = c;
+    c = b;
+    b = a;
+    a = t1 + t2;
+}
+
+// data is a whole number of 128-byte blocks.
+fn blocks(state: u64[8]&, data: u8[:]) {
+    var w: u64[16] = [0; 16];
+    var i = 0;
+    while i + 128 <= data.len {
+        let chunk = data[i..i + 128];
+        var a = state[0];
+        var b = state[1];
+        var c = state[2];
+        var d = state[3];
+        var e = state[4];
+        var f = state[5];
+        var g = state[6];
+        var h = state[7];
+        for t in 0..16 {
+            let x = load_be64(chunk, 8 * t);
+            w[t] = x;
+            round(a, b, c, d, e, f, g, h, K[t], x);
+        }
+        for t in 16..80 {
+            let w15 = w[(t - 15) & 15];
+            let w2 = w[(t - 2) & 15];
+            let s0 = rotr(w15, 1) ^ rotr(w15, 8) ^ (w15 >> 7);
+            let s1 = rotr(w2, 19) ^ rotr(w2, 61) ^ (w2 >> 6);
+            let x = w[t & 15] + s0 + w[(t - 7) & 15] + s1;
+            w[t & 15] = x;
+            round(a, b, c, d, e, f, g, h, K[t], x);
+        }
+        state[0] += a;
+        state[1] += b;
+        state[2] += c;
+        state[3] += d;
+        state[4] += e;
+        state[5] += f;
+        state[6] += g;
+        state[7] += h;
+        i += 128;
+    }
+}
+
+fn check_length(total: u64, more: i64) {
+    let m = more as u64;
+    if m >= MAX_BYTES - total { abort("sha512: a message must be shorter than 2^61 bytes"); }
+}
+
 fn init(c: Ctx&) {
-    c.h[0] = 0x6a09e667f3bcc908;
-    c.h[1] = 0xbb67ae8584caa73b;
-    c.h[2] = 0x3c6ef372fe94f82b;
-    c.h[3] = 0xa54ff53a5f1d36f1;
-    c.h[4] = 0x510e527fade682d1;
-    c.h[5] = 0x9b05688c2b3e6c1f;
-    c.h[6] = 0x1f83d9abfb41bd6b;
-    c.h[7] = 0x5be0cd19137e2179;
+    c.h = IV;
     c.n = 0;
     c.bytes = 0;
 }
 
-fn compress(h: u64[8]&, buf: u8[:]) {
-    var w: u64[80] = [0; 80];
-    for i in 0..16 {
-        let j = i * 8;
-        var x: u64 = 0;
-        for k in 0..8 {
-            let byte: u64 = buf[j + k];
-            x |= byte << ((7 - k) * 8);
-        }
-        w[i] = x;
-    }
-    for i in 16..80 {
-        let x = w[i - 15];
-        let y = w[i - 2];
-        let s0 = rotr(x, 1) ^ rotr(x, 8) ^ (x >> 7);
-        let s1 = rotr(y, 19) ^ rotr(y, 61) ^ (y >> 6);
-        w[i] = w[i - 16] + s0 + w[i - 7] + s1;
-    }
-    var a = h[0]; var b = h[1]; var c = h[2]; var d = h[3];
-    var e = h[4]; var f = h[5]; var g = h[6]; var hh = h[7];
-    for i in 0..80 {
-        let s1 = rotr(e, 14) ^ rotr(e, 18) ^ rotr(e, 41);
-        let ch = (e & f) ^ (~e & g);
-        let t1 = hh + s1 + ch + K[i] + w[i];
-        let s0 = rotr(a, 28) ^ rotr(a, 34) ^ rotr(a, 39);
-        let maj = (a & b) ^ (a & c) ^ (b & c);
-        let t2 = s0 + maj;
-        hh = g; g = f; f = e; e = d + t1; d = c; c = b; b = a; a = t1 + t2;
-    }
-    h[0] += a; h[1] += b; h[2] += c; h[3] += d;
-    h[4] += e; h[5] += f; h[6] += g; h[7] += hh;
-}
-
 fn update(c: Ctx&, data: u8[:]) {
+    check_length(c.bytes, data.len);
+    c.bytes += data.len as u64;
     var off = 0;
-    while off < data.len {
+    if c.n > 0 {
         let space = 128 - c.n;
-        var take = data.len - off;
+        var take = data.len;
         if take > space { take = space; }
-        for i in 0..take { c.buf[c.n + i] = data[off + i]; }
+        for i in 0..take { c.buf[c.n + i] = data[i]; }
         c.n += take;
-        off += take;
-        c.bytes += take as u64;
-        if c.n == 128 {
-            compress(c.h, c.buf);
-            c.n = 0;
-        }
+        off = take;
+        if c.n < 128 { return; }
+        blocks(c.h, c.buf);
+        c.n = 0;
     }
+    let whole = ((data.len - off) / 128) * 128;
+    if whole > 0 { blocks(c.h, data[off..off + whole]); }
+    off += whole;
+    let tail = data.len - off;
+    for i in 0..tail { c.buf[i] = data[off + i]; }
+    c.n = tail;
 }
 
-// finish consumes c.
+fn store_be64(dst: u8[:], at: i64, v: u64) {
+    for k in 0..8 { dst[at + k] = (v >> ((7 - k) * 8)) as! u8; }
+}
+
+// The digest so far. c is left as it was.
 fn finish(c: Ctx&) -> u8[64] {
+    var h = copy(c.h);
     let n = c.n;
-    c.buf[n] = 0x80;
-    if n >= 112 {
-        for i in (n + 1)..128 { c.buf[i] = 0; }
-        compress(c.h, c.buf);
-        for i in 0..112 { c.buf[i] = 0; }
-    } else {
-        for i in (n + 1)..112 { c.buf[i] = 0; }
-    }
-    let bits = c.bytes << 3;
-    for k in 0..8 { c.buf[112 + k] = 0; }
-    for k in 0..8 { c.buf[120 + k] = (bits >> ((7 - k) * 8)) as! u8; }
-    compress(c.h, c.buf);
+    var tailbuf: u8[256] = [0; 256];
+    for i in 0..n { tailbuf[i] = c.buf[i]; }
+    tailbuf[n] = 0x80;
+    let nblk = if n >= 112 { 256 } else { 128 };
+    store_be64(tailbuf, nblk - 8, c.bytes << 3);
+    blocks(h, tailbuf[..nblk]);
     var out: u8[64] = [0; 64];
-    for i in 0..8 {
-        let v = c.h[i];
-        for k in 0..8 { out[i * 8 + k] = (v >> ((7 - k) * 8)) as! u8; }
-    }
+    for i in 0..8 { store_be64(out, i * 8, h[i]); }
     return out;
 }
 
@@ -155,39 +189,4 @@ fn hmac(key: u8[:], data: u8[:]) -> u8[64] {
     update(outer, opad);
     update(outer, ih);
     return finish(outer);
-}
-
-fn nibble(c: u8) -> u8 {
-    if c >= '0' && c <= '9' { return c - '0'; }
-    if c >= 'a' && c <= 'f' { return c - 'a' + 10; }
-    return c - 'A' + 10;
-}
-
-fn eq_hex(got: u8[:], hex: u8[:]) -> bool {
-    if got.len * 2 != hex.len { return false; }
-    for i in 0..got.len {
-        let v = (nibble(hex[i * 2]) << 4) | nibble(hex[i * 2 + 1]);
-        if got[i] != v { return false; }
-    }
-    return true;
-}
-
-fn self_check() -> bool {
-    if !hash("").eq_hex("cf83e1357eefb8bdf1542850d66d8007d620e4050b5715dc83f4a921d36ce9ce47d0d13c5d85f2b0ff8318d2877eec2f63b931bd47417a81a538327af927da3e") { return false; }
-    if !hash("abc").eq_hex("ddaf35a193617abacc417349ae20413112e6fa4e89a97ea20a9eeee64b55d39a2192992a274fc1a836ba3c23a3feebbd454d4423643ce80e2a9ac94fa54ca49f") { return false; }
-    let long = "abcdefghbcdefghicdefghijdefghijkefghijklfghijklmghijklmnhijklmnoijklmnopjklmnopqklmnopqrlmnopqrsmnopqrstnopqrstu";
-    if !hash(long).eq_hex("8e959b75dae313da8cf4f72814fc143f8f7779c6eb9f7fa17299aeadb6889018501d289e4900f7e4331b99dec4b5433ac7d329eeb6dd26545e96e55b874be909") { return false; }
-    var c: Ctx = default<Ctx>();
-    init(c);
-    update(c, "ab");
-    update(c, "c");
-    if !finish(c).eq_hex("ddaf35a193617abacc417349ae20413112e6fa4e89a97ea20a9eeee64b55d39a2192992a274fc1a836ba3c23a3feebbd454d4423643ce80e2a9ac94fa54ca49f") { return false; }
-    var key: u8[20] = [0x0b; 20];
-    if !hmac(key, "Hi There").eq_hex("87aa7cdea5ef619d4ff0b4241a1d6cb02379f4e2ce4ec2787ad0b30545e17cdedaa833b7d6b8a702038b274eaea3f4e4be9d914eeb61f1702e696c203a126854") { return false; }
-    if !hmac("Jefe", "what do ya want for nothing?").eq_hex("164b7a7bfcf819e2e395fbe73b56e0a387bd64222e831fd610270cd7ea2505549758bf75c05a994a6d034f65f8f0e6fdcaeab1a34d4a6b4b636e070a38bce737") { return false; }
-    return true;
-}
-
-fn ::main() {
-    if sha512::self_check() { print("sha512 ok"); } else { print("sha512 FAIL"); exit(1); }
 }

@@ -23,9 +23,9 @@ struct Ctx {
     n: i64,
 }
 
-fn rotl(x: u64, n: i64) -> u64 { (x << n) | (x >> (64 - n)) }
+inline fn rotl(x: u64, n: i64) -> u64 { (x << n) | (x >> (64 - n)) }
 
-fn chi(st: u64[25]&, o: i64) {
+inline fn chi(st: u64[25]&, o: i64) {
     let a = st[o];
     let b = st[o + 1];
     let c = st[o + 2];
@@ -38,7 +38,7 @@ fn chi(st: u64[25]&, o: i64) {
     st[o + 4] ^= (~a) & b;
 }
 
-fn step(st: u64[25]&, rc: u64) {
+inline fn step(st: u64[25]&, rc: u64) {
     let b0 = st[0] ^ st[5] ^ st[10] ^ st[15] ^ st[20];
     let b1 = st[1] ^ st[6] ^ st[11] ^ st[16] ^ st[21];
     let b2 = st[2] ^ st[7] ^ st[12] ^ st[17] ^ st[22];
@@ -154,30 +154,46 @@ fn step(st: u64[25]&, rc: u64) {
     st[0] ^= rc;
 }
 
-fn permute(st: u64[25]&) {
+inline fn permute(st: u64[25]&) {
     for round in 0..24 { step(st, RNDC[round]); }
 }
 
+fn xor_byte(st: u64[25]&, i: i64, b: u8) {
+    let x: u64 = b;
+    st[i / 8] ^= x << ((i % 8) * 8);
+}
+
+fn xor_lane(st: u64[25]&, buf: u8[:], lane: i64) {
+    let c = buf[lane * 8..lane * 8 + 8];
+    let w = c[0] | (c[1] as u64) << 8 | (c[2] as u64) << 16 | (c[3] as u64) << 24 |
+        (c[4] as u64) << 32 | (c[5] as u64) << 40 | (c[6] as u64) << 48 | (c[7] as u64) << 56;
+    st[lane] ^= w;
+}
+
+// A full rate. The lane index is a 0..17 counter, so the loads carry no check.
+inline fn xor_rate(st: u64[25]&, buf: u8[:]) {
+    assert(buf.len >= RATE);
+    for lane in 0..17 {
+        let c = buf[(lane * 8)..(lane * 8 + 8)];
+        let w = c[0] | (c[1] as u64) << 8 | (c[2] as u64) << 16 | (c[3] as u64) << 24 |
+            (c[4] as u64) << 32 | (c[5] as u64) << 40 | (c[6] as u64) << 48 | (c[7] as u64) << 56;
+        st[lane] ^= w;
+    }
+}
+
 fn xor_buf(st: u64[25]&, buf: u8[:]) {
-    var i = 0;
-    let full = buf.len - buf.len % 8;
-    while i < full {
-        let b0: u64 = buf[i];
-        let b1: u64 = buf[i + 1];
-        let b2: u64 = buf[i + 2];
-        let b3: u64 = buf[i + 3];
-        let b4: u64 = buf[i + 4];
-        let b5: u64 = buf[i + 5];
-        let b6: u64 = buf[i + 6];
-        let b7: u64 = buf[i + 7];
-        st[i / 8] ^= b0 | (b1 << 8) | (b2 << 16) | (b3 << 24) | (b4 << 32) | (b5 << 40) | (b6 << 48) | (b7 << 56);
-        i += 8;
+    assert(buf.len <= RATE);
+    let lanes = buf.len / 8;
+    for lane in 0..lanes { xor_lane(st, buf, lane); }
+    for i in (lanes * 8)..buf.len { xor_byte(st, i, buf[i]); }
+}
+
+fn squeeze(st: u64[25]&) -> u8[32] {
+    var out: u8[32] = [0; 32];
+    for i in 0..32 {
+        out[i] = (st[i / 8] >> ((i % 8) * 8)) as! u8;
     }
-    while i < buf.len {
-        let b: u64 = buf[i];
-        st[i / 8] ^= b << ((i % 8) * 8);
-        i += 1;
-    }
+    return out;
 }
 
 fn init(c: Ctx&) {
@@ -187,19 +203,29 @@ fn init(c: Ctx&) {
 
 fn update(c: Ctx&, data: u8[:]) {
     var off = 0;
-    while off < data.len {
+    if c.n > 0 {
         let space = RATE - c.n;
-        var take = data.len - off;
+        var take = data.len;
         if take > space { take = space; }
-        for i in 0..take { c.buf[c.n + i] = data[off + i]; }
+        for i in 0..take { c.buf[c.n + i] = data[i]; }
         c.n += take;
-        off += take;
-        if c.n == RATE {
-            xor_buf(c.st, c.buf);
-            permute(c.st);
-            c.n = 0;
-        }
+        off = take;
+        if c.n < RATE { return; }
+        xor_rate(c.st, c.buf);
+        permute(c.st);
+        c.n = 0;
     }
+    let whole = ((data.len - off) / RATE) * RATE;
+    var i = 0;
+    while i < whole {
+        xor_rate(c.st, data[off + i..off + i + RATE]);
+        permute(c.st);
+        i += RATE;
+    }
+    off += whole;
+    let tail = data.len - off;
+    for i in 0..tail { c.buf[i] = data[off + i]; }
+    c.n = tail;
 }
 
 fn finish(c: Ctx&) -> u8[32] {
@@ -208,48 +234,21 @@ fn finish(c: Ctx&) -> u8[32] {
     c.buf[RATE - 1] |= 0x80;
     xor_buf(c.st, c.buf);
     permute(c.st);
-    var out: u8[32] = [0; 32];
-    for i in 0..32 {
-        out[i] = (c.st[i / 8] >> ((i % 8) * 8)) as! u8;
-    }
-    return out;
+    return squeeze(c.st);
+}
+
+fn hash_short(data: u8[:]) -> u8[32] {
+    var st: u64[25] = [0; 25];
+    xor_buf(st, data);
+    xor_byte(st, data.len, 0x01);
+    xor_byte(st, RATE - 1, 0x80);
+    permute(st);
+    return squeeze(st);
 }
 
 fn hash(data: u8[:]) -> u8[32] {
+    if data.len < RATE { return hash_short(data); }
     var c: Ctx = default<Ctx>();
-    init(c);
     update(c, data);
     return finish(c);
-}
-
-fn nibble(c: u8) -> u8 {
-    if c >= '0' && c <= '9' { return c - '0'; }
-    if c >= 'a' && c <= 'f' { return c - 'a' + 10; }
-    return c - 'A' + 10;
-}
-
-fn eq_hex(got: u8[:], hex: u8[:]) -> bool {
-    if got.len * 2 != hex.len { return false; }
-    for i in 0..got.len {
-        let v = (nibble(hex[i * 2]) << 4) | nibble(hex[i * 2 + 1]);
-        if got[i] != v { return false; }
-    }
-    return true;
-}
-
-fn self_check() -> bool {
-    if !hash("").eq_hex("c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470") { return false; }
-    if !hash("abc").eq_hex("4e03657aea45a94fc7d47ba826c8d667c0d1e6e33a64a036ec44f58fa12d6c45") { return false; }
-    var a136: u8[136] = ['a'; 136];
-    if !hash(a136).eq_hex("a6c4d403279fe3e0af03729caada8374b5ca54d8065329a3ebcaeb4b60aa386e") { return false; }
-    var a137: u8[137] = ['a'; 137];
-    if !hash(a137).eq_hex("d869f639c7046b4929fc92a4d988a8b22c55fbadb802c0c66ebcd484f1915f39") { return false; }
-    var seq: u8[200] = [0; 200];
-    for i in 0..200 { seq[i] = i as! u8; }
-    if !hash(seq).eq_hex("bfb0aa97863e797943cf7c33bb7e880bb4543f3d2703c0923c6901c2af57b890") { return false; }
-    return true;
-}
-
-fn ::main() {
-    if keccak256::self_check() { print("keccak256 ok"); } else { print("keccak256 FAIL"); exit(1); }
 }

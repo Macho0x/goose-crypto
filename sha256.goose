@@ -16,94 +16,32 @@ const K: u32[64] = [
     0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
 ];
 
+const IV: u32[8] = [
+    0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
+];
+
+// FIPS 180-4 limits a message to less than 2^64 bits.
+const MAX_BYTES: u64 = 0x2000000000000000;
+
 struct Ctx {
-    h: u32[8],
+    h: u32[8] = IV,
     buf: u8[64],
     n: i64,
     bytes: u64,
 }
 
+// Inner and outer states after the key block. Copy one to MAC another
+// message under the same key.
+struct Mac {
+    inner: Ctx,
+    outer: Ctx,
+}
+
 fn rotr(x: u32, n: u32) -> u32 { (x >> n) | (x << (32 - n)) }
 
-fn init(c: Ctx&) {
-    c.h[0] = 0x6a09e667;
-    c.h[1] = 0xbb67ae85;
-    c.h[2] = 0x3c6ef372;
-    c.h[3] = 0xa54ff53a;
-    c.h[4] = 0x510e527f;
-    c.h[5] = 0x9b05688c;
-    c.h[6] = 0x1f83d9ab;
-    c.h[7] = 0x5be0cd19;
-    c.n = 0;
-    c.bytes = 0;
-}
-
-fn compress(h: u32[8]&, buf: u8[:]) {
-    var w: u32[64] = [0; 64];
-    for i in 0..16 {
-        let j = i * 4;
-        let b0: u32 = buf[j];
-        let b1: u32 = buf[j + 1];
-        let b2: u32 = buf[j + 2];
-        let b3: u32 = buf[j + 3];
-        w[i] = (b0 << 24) | (b1 << 16) | (b2 << 8) | b3;
-    }
-    for i in 16..64 {
-        let x = w[i - 15];
-        let y = w[i - 2];
-        let s0 = rotr(x, 7) ^ rotr(x, 18) ^ (x >> 3);
-        let s1 = rotr(y, 17) ^ rotr(y, 19) ^ (y >> 10);
-        w[i] = w[i - 16] + s0 + w[i - 7] + s1;
-    }
-    var a = h[0];
-    var b = h[1];
-    var c = h[2];
-    var d = h[3];
-    var e = h[4];
-    var f = h[5];
-    var g = h[6];
-    var hh = h[7];
-    for i in 0..64 {
-        let s1 = rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25);
-        let ch = (e & f) ^ (~e & g);
-        let t1 = hh + s1 + ch + K[i] + w[i];
-        let s0 = rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22);
-        let maj = (a & b) ^ (a & c) ^ (b & c);
-        let t2 = s0 + maj;
-        hh = g;
-        g = f;
-        f = e;
-        e = d + t1;
-        d = c;
-        c = b;
-        b = a;
-        a = t1 + t2;
-    }
-    h[0] += a;
-    h[1] += b;
-    h[2] += c;
-    h[3] += d;
-    h[4] += e;
-    h[5] += f;
-    h[6] += g;
-    h[7] += hh;
-}
-
-fn update(c: Ctx&, data: u8[:]) {
-    var off = 0;
-    while off < data.len {
-        let space = 64 - c.n;
-        var take = data.len - off;
-        if take > space { take = space; }
-        for i in 0..take { c.buf[c.n + i] = data[off + i]; }
-        c.n += take;
-        off += take;
-        c.bytes += take as u64;
-        if c.n == 64 {
-            compress(c.h, c.buf);
-            c.n = 0;
-        }
-    }
+fn load_be32(s: u8[:], i: i64) -> u32 {
+    let c = s[i..i + 4];
+    return (c[0] as u32) << 24 | (c[1] as u32) << 16 | (c[2] as u32) << 8 | c[3];
 }
 
 fn store_be64(dst: u8[:], at: i64, v: u64) {
@@ -119,21 +57,105 @@ fn store_be32(dst: u8[:], at: i64, v: u32) {
     dst[at + 3] = v as! u8;
 }
 
-// finish consumes c.
-fn finish(c: Ctx&) -> u8[32] {
-    let n = c.n;
-    c.buf[n] = 0x80;
-    if n >= 56 {
-        for i in (n + 1)..64 { c.buf[i] = 0; }
-        compress(c.h, c.buf);
-        for i in 0..56 { c.buf[i] = 0; }
-    } else {
-        for i in (n + 1)..56 { c.buf[i] = 0; }
+inline fn round(a: u32&, b: u32&, c: u32&, d: u32&, e: u32&, f: u32&, g: u32&, h: u32&, k: u32, x: u32) {
+    let t1 = h + (rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25)) + (g ^ (e & (f ^ g))) + k + x;
+    let t2 = (rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22)) + ((a & b) | (c & (a | b)));
+    h = g;
+    g = f;
+    f = e;
+    e = d + t1;
+    d = c;
+    c = b;
+    b = a;
+    a = t1 + t2;
+}
+
+// data is a whole number of 64-byte blocks.
+fn blocks(state: u32[8]&, data: u8[:]) {
+    var w: u32[16] = [0; 16];
+    var i = 0;
+    while i + 64 <= data.len {
+        let chunk = data[i..i + 64];
+        var a = state[0];
+        var b = state[1];
+        var c = state[2];
+        var d = state[3];
+        var e = state[4];
+        var f = state[5];
+        var g = state[6];
+        var h = state[7];
+        for t in 0..16 {
+            let x = load_be32(chunk, 4 * t);
+            w[t] = x;
+            round(a, b, c, d, e, f, g, h, K[t], x);
+        }
+        for t in 16..64 {
+            let w15 = w[(t - 15) & 15];
+            let w2 = w[(t - 2) & 15];
+            let s0 = rotr(w15, 7) ^ rotr(w15, 18) ^ (w15 >> 3);
+            let s1 = rotr(w2, 17) ^ rotr(w2, 19) ^ (w2 >> 10);
+            let x = w[t & 15] + s0 + w[(t - 7) & 15] + s1;
+            w[t & 15] = x;
+            round(a, b, c, d, e, f, g, h, K[t], x);
+        }
+        state[0] += a;
+        state[1] += b;
+        state[2] += c;
+        state[3] += d;
+        state[4] += e;
+        state[5] += f;
+        state[6] += g;
+        state[7] += h;
+        i += 64;
     }
-    store_be64(c.buf, 56, c.bytes << 3);
-    compress(c.h, c.buf);
+}
+
+fn check_length(total: u64, more: i64) {
+    let m = more as u64;
+    if m >= MAX_BYTES - total { abort("sha256: a message must be shorter than 2^61 bytes"); }
+}
+
+fn init(c: Ctx&) {
+    c.h = IV;
+    c.n = 0;
+    c.bytes = 0;
+}
+
+fn update(c: Ctx&, data: u8[:]) {
+    check_length(c.bytes, data.len);
+    c.bytes += data.len as u64;
+    var off = 0;
+    if c.n > 0 {
+        let space = 64 - c.n;
+        var take = data.len;
+        if take > space { take = space; }
+        for i in 0..take { c.buf[c.n + i] = data[i]; }
+        c.n += take;
+        off = take;
+        if c.n < 64 { return; }
+        blocks(c.h, c.buf);
+        c.n = 0;
+    }
+    let whole = ((data.len - off) / 64) * 64;
+    if whole > 0 { blocks(c.h, data[off..off + whole]); }
+    off += whole;
+    let tail = data.len - off;
+    for i in 0..tail { c.buf[i] = data[off + i]; }
+    c.n = tail;
+}
+
+// The digest so far. c is left as it was.
+fn finish(c: Ctx&) -> u8[32] {
+    var h = copy(c.h);
+    let n = c.n;
+    var tailbuf: u8[128] = [0; 128];
+    for i in 0..n { tailbuf[i] = c.buf[i]; }
+    tailbuf[n] = 0x80;
+    let nblk = if n >= 56 { 128 } else { 64 };
+    store_be64(tailbuf, nblk - 8, c.bytes << 3);
+    blocks(h, tailbuf[..nblk]);
     var out: u8[32] = [0; 32];
-    for i in 0..8 { store_be32(out, i * 4, c.h[i]); }
+    for i in 0..8 { store_be32(out, i * 4, h[i]); }
     return out;
 }
 
@@ -144,7 +166,21 @@ fn hash(data: u8[:]) -> u8[32] {
     return finish(c);
 }
 
-fn hmac(key: u8[:], data: u8[:]) -> u8[32] {
+// SHA-256(SHA-256(data)). The second hash is one block.
+fn hash256(data: u8[:]) -> u8[32] {
+    let first = hash(data);
+    var h = IV;
+    var msgblk: u8[64] = [0; 64];
+    for i in 0..32 { msgblk[i] = first[i]; }
+    msgblk[32] = 0x80;
+    msgblk[62] = 0x01;
+    blocks(h, msgblk);
+    var out: u8[32] = [0; 32];
+    for i in 0..8 { store_be32(out, i * 4, h[i]); }
+    return out;
+}
+
+fn mac_start(key: u8[:]) -> Mac {
     var k: u8[64] = [0; 64];
     if key.len > 64 {
         let hk = hash(key);
@@ -158,53 +194,25 @@ fn hmac(key: u8[:], data: u8[:]) -> u8[32] {
         ipad[i] = k[i] ^ 0x36;
         opad[i] = k[i] ^ 0x5c;
     }
-    var inner: Ctx = default<Ctx>();
-    init(inner);
-    update(inner, ipad);
-    update(inner, data);
-    let ih = finish(inner);
-    var outer: Ctx = default<Ctx>();
-    init(outer);
-    update(outer, opad);
-    update(outer, ih);
+    var m: Mac = default<Mac>();
+    init(m.inner);
+    init(m.outer);
+    update(m.inner, ipad);
+    update(m.outer, opad);
+    return m;
+}
+
+fn mac_update(m: Mac&, data: u8[:]) { update(m.inner, data); }
+
+fn mac_finish(m: Mac&) -> u8[32] {
+    let d = finish(m.inner);
+    var outer = copy(m.outer);
+    update(outer, d);
     return finish(outer);
 }
 
-fn nibble(c: u8) -> u8 {
-    if c >= '0' && c <= '9' { return c - '0'; }
-    if c >= 'a' && c <= 'f' { return c - 'a' + 10; }
-    return c - 'A' + 10;
-}
-
-fn eq_hex(got: u8[:], hex: u8[:]) -> bool {
-    if got.len * 2 != hex.len { return false; }
-    for i in 0..got.len {
-        let v = (nibble(hex[i * 2]) << 4) | nibble(hex[i * 2 + 1]);
-        if got[i] != v { return false; }
-    }
-    return true;
-}
-
-fn self_check() -> bool {
-    if !hash("").eq_hex("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855") { return false; }
-    if !hash("abc").eq_hex("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad") { return false; }
-    let classic = "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq";
-    if !hash(classic).eq_hex("248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1") { return false; }
-    var a1000: u8[1000] = ['a'; 1000];
-    if !hash(a1000).eq_hex("41edece42d63e8d9bf515a9ba6932e1c20cbc9f5a5d134645adb5db1b9737ea3") { return false; }
-    var c: Ctx = default<Ctx>();
-    init(c);
-    update(c, a1000[..100]);
-    update(c, a1000[100..700]);
-    update(c, a1000[700..]);
-    if !finish(c).eq_hex("41edece42d63e8d9bf515a9ba6932e1c20cbc9f5a5d134645adb5db1b9737ea3") { return false; }
-    let fox = "The quick brown fox jumps over the lazy dog";
-    if !hmac("key", fox).eq_hex("f7bc83f430538424b13298e6aa6fb143ef4d59a14946175997479dbc2d1a3cd8") { return false; }
-    var longk: u8[80] = ['k'; 80];
-    if !hmac(longk, "data").eq_hex("db0b0964fe44311ab89fac8b72ed6f349c5b3bc574c92b87d92a3dbc5de20a8f") { return false; }
-    return true;
-}
-
-fn ::main() {
-    if sha256::self_check() { print("sha256 ok"); } else { print("sha256 FAIL"); exit(1); }
+fn hmac(key: u8[:], data: u8[:]) -> u8[32] {
+    var m = mac_start(key);
+    mac_update(m, data);
+    return mac_finish(m);
 }

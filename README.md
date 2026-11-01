@@ -1,8 +1,8 @@
 # goose-crypto
 
-Version 0.14.
+Version 0.15.
 
-Hashes, public-key cryptography, and transaction signing in [Goose](https://github.com/aardappel/goose). The implementations are Goose, with no foreign calls and no vendored C. Every module checks itself against a published test vector.
+Hashes, public-key cryptography, and transaction signing in [Goose](https://github.com/aardappel/goose). The implementations are Goose, with no foreign calls and no vendored C. The tests in `tests/` check each module against a published vector.
 
 Copyright 2026 Macho0x. Licensed under Apache-2.0, the same license as Goose.
 
@@ -11,13 +11,13 @@ Copyright 2026 Macho0x. Licensed under Apache-2.0, the same license as Goose.
 Install the Goose compiler, then from this directory:
 
 ```sh
-goose sha256.goose
+goose tests/sha256.goose
 ```
 
 A good run prints `sha256 ok`. The same holds for every module below.
 
 ```sh
-goose self_check.goose
+goose tests/self_check.goose
 ```
 
 runs all of them and prints `crypto ok`.
@@ -66,15 +66,15 @@ This code does not run in constant time. Secret-dependent choices are masked in 
 
 ## Benchmarks
 
-`bench.goose` times the primitives. The signing modules call those primitives; their self-checks are the correctness test and are not part of the timing.
+`bench.goose` times the primitives. The signing modules call those primitives; the tests are the correctness check and are not part of the timing.
 
 ```sh
-goose build -o crypto-bench bench.goose --cc gcc
+goose build -o crypto-bench bench.goose --cc clang
 ./crypto-bench
 ```
 
-`goose bench.goose` is the same program through TinyCC, which is how `goose file.goose` runs a module.
+That clang build is the speed build. `goose bench.goose` is the same program through TinyCC, which is how `goose file.goose` runs a module.
 
-secp256k1 reduces products by the field prime and the group order, and multiplies the generator from a precomputed comb. Keccak absorbs eight bytes at a time. The other modules are straight-line Goose. There is no assembly. Timings depend on the machine and the Goose commit, so this page does not publish them. Run the bench above on the machine you care about. Faster code is welcome when `goose self_check.goose` still prints `crypto ok`.
+secp256k1 reduces products by the field prime and the group order, and multiplies the generator from a precomputed comb. Keccak absorbs eight bytes at a time. The other modules are straight-line Goose. There is no assembly. Timings depend on the machine and the Goose commit, so this page does not publish them. Run the bench above on the machine you care about. Faster code is welcome when `goose tests/self_check.goose` still prints `crypto ok`.
 
 [eth.zig](https://github.com/StrobeLabs/eth.zig) publishes a comparison with alloy.rs. Those figures are from another machine, and that library vendors libsecp256k1 and XKCP Keccak.

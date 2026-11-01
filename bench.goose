@@ -24,7 +24,9 @@ var secret: u8[32] = [
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 ];
 var buf32: u8[32] = [0x11; 32];
+var buf64: u8[64] = [0x11; 64];
 var buf4k: u8[4096] = [0x61; 4096];
+var buf1m: u8[1048576] = [0x61; 1048576];
 var dig: u8[32] = [0x42; 32];
 var live: u8[32] = [0x42; 32];
 var aux: u8[32] = [0; 32];
@@ -41,6 +43,21 @@ var ed_sig: u8[64] = [0; 64];
 var bip_pk: u8[32] = [0; 32];
 var bip_sig: u8[64] = [0; 64];
 var sealed: u8[>..] = [];
+
+fn nibble(c: u8) -> u8 {
+    if c >= '0' && c <= '9' { return c - '0'; }
+    if c >= 'a' && c <= 'f' { return c - 'a' + 10; }
+    return c - 'A' + 10;
+}
+
+fn eq_hex(got: u8[:], hex: u8[:]) -> bool {
+    if got.len * 2 != hex.len { return false; }
+    for i in 0..got.len {
+        let v = (nibble(hex[i * 2]) << 4) | nibble(hex[i * 2 + 1]);
+        if got[i] != v { return false; }
+    }
+    return true;
+}
 
 fn copy_at(dst: u8[:], src: u8[:]) {
     for i in 0..src.len { dst[i] = src[i]; }
@@ -93,9 +110,27 @@ fn sha32() -> u64 {
     return mark(d[0], true);
 }
 
+fn sha64() -> u64 {
+    buf64[0] += 1;
+    let d = sha256::hash(buf64);
+    return mark(d[0], true);
+}
+
 fn sha4k() -> u64 {
     buf4k[0] += 1;
     let d = sha256::hash(buf4k);
+    return mark(d[0], true);
+}
+
+fn sha1m() -> u64 {
+    buf1m[0] += 1;
+    let d = sha256::hash(buf1m);
+    return mark(d[0], true);
+}
+
+fn hmac32() -> u64 {
+    buf32[0] += 1;
+    let d = sha256::hmac(secret, buf32);
     return mark(d[0], true);
 }
 
@@ -108,6 +143,12 @@ fn sha512_32() -> u64 {
 fn sha512_4k() -> u64 {
     buf4k[0] += 1;
     let d = sha512::hash(buf4k);
+    return mark(d[0], true);
+}
+
+fn sha512_1m() -> u64 {
+    buf1m[0] += 1;
+    let d = sha512::hash(buf1m);
     return mark(d[0], true);
 }
 
@@ -132,6 +173,13 @@ fn hkdf_extract() -> u64 {
 fn hkdf_expand() -> u64 {
     buf32[0] += 1;
     var out: u8[32] = [0; 32];
+    let ok = hkdf::expand(secret, buf32, out);
+    return mark(out[0], ok);
+}
+
+fn hkdf_expand64() -> u64 {
+    buf32[0] += 1;
+    var out: u8[64] = [0; 64];
     let ok = hkdf::expand(secret, buf32, out);
     return mark(out[0], ok);
 }
@@ -225,23 +273,23 @@ fn argon() -> u64 {
 
 fn ready() -> bool {
     let s512 = sha512::hash("");
-    if !sha512::eq_hex(s512, "cf83e1357eefb8bdf1542850d66d8007d620e4050b5715dc83f4a921d36ce9ce47d0d13c5d85f2b0ff8318d2877eec2f63b931bd47417a81a538327af927da3e") {
+    if !eq_hex(s512, "cf83e1357eefb8bdf1542850d66d8007d620e4050b5715dc83f4a921d36ce9ce47d0d13c5d85f2b0ff8318d2877eec2f63b931bd47417a81a538327af927da3e") {
         return false;
     }
     let ripe = ripemd160::hash("");
-    if !ripemd160::eq_hex(ripe, "9c1185a5c5e9fc54612808977ee8f548b2258d31") { return false; }
+    if !eq_hex(ripe, "9c1185a5c5e9fc54612808977ee8f548b2258d31") { return false; }
     var ikm: u8[22] = [0x0b; 22];
     let prk = hkdf::extract("", ikm);
-    if !hkdf::eq_hex(prk, "19ef24a32c717b167f33a91d6f648bdf96596776afdb6377ac434c1c293ccb04") {
+    if !eq_hex(prk, "19ef24a32c717b167f33a91d6f648bdf96596776afdb6377ac434c1c293ccb04") {
         return false;
     }
     var okm: u8[42] = [0; 42];
     if !hkdf::expand(prk, "", okm) { return false; }
-    if !hkdf::eq_hex(okm, "8da4e775a563c18f715f802a063c5a31b8a11f5c5ee1879ec3454e5f3c738d2d9d201395faa4b61a96c8") {
+    if !eq_hex(okm, "8da4e775a563c18f715f802a063c5a31b8a11f5c5ee1879ec3454e5f3c738d2d9d201395faa4b61a96c8") {
         return false;
     }
     let empty = keccak256::hash("");
-    if !keccak256::eq_hex(empty, "c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470") {
+    if !eq_hex(empty, "c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470") {
         return false;
     }
     let pk, pok = secp256k1::pubkey_compressed(secret);
@@ -271,7 +319,7 @@ fn ready() -> bool {
     if !uok || !gok || got != upk || !eip191::verify(upk, "hello world", ps) { return false; }
     var tag: u8[32] = [0; 32];
     if !argon2id::hash(pw, salt, asecret, ad, 32, 3, 4, tag) { return false; }
-    if !argon2id::eq_hex(tag, "0d640df58d78766c08c037a34a8b53c9d01ef0452d75b65eb52520e96b01e659") {
+    if !eq_hex(tag, "0d640df58d78766c08c037a34a8b53c9d01ef0452d75b65eb52520e96b01e659") {
         return false;
     }
     return chacha32() != 0;
@@ -282,13 +330,18 @@ fn ::main() {
     write_stdout("operation                       ns/call\n");
     var sink: u64 = 0;
     sink += row("sha256 32B", 64, 250, sha32);
+    sink += row("sha256 64B", 64, 250, sha64);
     sink += row("sha256 4KB", 16, 250, sha4k);
+    sink += row("sha256 1MB", 1, 400, sha1m);
+    sink += row("hmac sha256 32B", 64, 250, hmac32);
     sink += row("sha512 32B", 64, 250, sha512_32);
     sink += row("sha512 4KB", 16, 250, sha512_4k);
+    sink += row("sha512 1MB", 1, 400, sha512_1m);
     sink += row("ripemd160 32B", 64, 250, ripe32);
     sink += row("ripemd160 4KB", 16, 250, ripe4k);
     sink += row("hkdf extract", 64, 250, hkdf_extract);
     sink += row("hkdf expand 32B", 64, 250, hkdf_expand);
+    sink += row("hkdf expand 64B", 64, 250, hkdf_expand64);
     sink += row("keccak256 empty", 64, 250, kec0);
     sink += row("keccak256 32B", 64, 250, kec32);
     sink += row("keccak256 4KB", 16, 250, kec4k);

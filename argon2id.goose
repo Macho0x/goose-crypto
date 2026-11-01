@@ -37,12 +37,9 @@ struct B2 {
 fn rotr(x: u64, n: u64) -> u64 { (x >> n) | (x << (64 - n)) }
 
 fn load64(b: u8[:], i: i64) -> u64 {
-    var x: u64 = 0;
-    for k in 0..8 {
-        let byte: u64 = b[i + k];
-        x |= byte << (k * 8);
-    }
-    return x;
+    let c = b[i..i + 8];
+    return c[0] | (c[1] as u64) << 8 | (c[2] as u64) << 16 | (c[3] as u64) << 24 |
+        (c[4] as u64) << 32 | (c[5] as u64) << 40 | (c[6] as u64) << 48 | (c[7] as u64) << 56;
 }
 
 fn store64(out: u8[:], at: i64, v: u64) {
@@ -185,7 +182,7 @@ fn fblamka(x: u64, y: u64) -> u64 {
     return x + y + xy + xy;
 }
 
-fn gb(v: u64[16]&, a: i64, b: i64, c: i64, d: i64) {
+fn gb(v: u64[:], a: i64, b: i64, c: i64, d: i64) {
     v[a] = fblamka(v[a], v[b]);
     v[d] = rotr(v[d] ^ v[a], 32);
     v[c] = fblamka(v[c], v[d]);
@@ -196,7 +193,7 @@ fn gb(v: u64[16]&, a: i64, b: i64, c: i64, d: i64) {
     v[b] = rotr(v[b] ^ v[c], 63);
 }
 
-fn blamka(v: u64[16]&) {
+fn blamka(v: u64[:]) {
     gb(v, 0, 4, 8, 12);
     gb(v, 1, 5, 9, 13);
     gb(v, 2, 6, 10, 14);
@@ -209,10 +206,7 @@ fn blamka(v: u64[16]&) {
 
 fn permute(r: u64[128]&) {
     for row in 0..8 {
-        var v: u64[16] = [0; 16];
-        for j in 0..16 { v[j] = r[row * 16 + j]; }
-        blamka(v);
-        for j in 0..16 { r[row * 16 + j] = v[j]; }
+        blamka(r[row * 16..row * 16 + 16]);
     }
     for col in 0..8 {
         var v: u64[16] = [0; 16];
@@ -288,7 +282,26 @@ fn word(mem: u64[:], blk: i64, i: i64) -> u64 { mem[blk * 128 + i] }
 
 fn put_word(mem: u64[>..]&, blk: i64, i: i64, v: u64) { mem[blk * 128 + i] = v; }
 
+fn fill_indexed(mem: u64[>..]&, prev: i64, refb: i64, curr: i64, with_xor: bool) {
+    var r: u64[128] = [0; 128];
+    var tmp: u64[128] = [0; 128];
+    let p0 = prev * 128;
+    let r0 = refb * 128;
+    let c0 = curr * 128;
+    for i in 0..128 {
+        r[i] = mem[r0 + i] ^ mem[p0 + i];
+        tmp[i] = r[i];
+        if with_xor { tmp[i] ^= mem[c0 + i]; }
+    }
+    permute(r);
+    for i in 0..128 { mem[c0 + i] = tmp[i] ^ r[i]; }
+}
+
 fn compress_into(mem: u64[>..]&, prev: i64, refb: i64, curr: i64, with_xor: bool) {
+    if prev != refb && refb != curr && prev != curr {
+        fill_indexed(mem, prev, refb, curr, with_xor);
+        return;
+    }
     var p: u64[128] = [0; 128];
     var r: u64[128] = [0; 128];
     var n: u64[128] = [0; 128];
@@ -408,36 +421,4 @@ fn hash(password: u8[:], salt: u8[:], secret: u8[:], ad: u8[:], m_kib: i64, pass
     for i in 0..128 { store64(raw, i * 8, acc[i]); }
     blake2b_long(raw, out);
     return true;
-}
-
-fn nibble(c: u8) -> u8 {
-    if c >= '0' && c <= '9' { return c - '0'; }
-    if c >= 'a' && c <= 'f' { return c - 'a' + 10; }
-    return c - 'A' + 10;
-}
-
-fn eq_hex(got: u8[:], hex: u8[:]) -> bool {
-    if got.len * 2 != hex.len { return false; }
-    for i in 0..got.len {
-        let v = (nibble(hex[i * 2]) << 4) | nibble(hex[i * 2 + 1]);
-        if got[i] != v { return false; }
-    }
-    return true;
-}
-
-fn self_check() -> bool {
-    var empty: u8[64] = [0; 64];
-    blake2b("", empty);
-    if !empty.eq_hex("786a02f742015903c6c6fd852552d272912f4740e15847618a86e217f71f5419d25e1031afee585313896444934eb04b903a685b1448b755d56f701afe9be2ce") { return false; }
-    var password: u8[32] = [0x01; 32];
-    var salt: u8[16] = [0x02; 16];
-    var secret: u8[8] = [0x03; 8];
-    var ad: u8[12] = [0x04; 12];
-    var tag: u8[32] = [0; 32];
-    if !hash(password, salt, secret, ad, 32, 3, 4, tag) { return false; }
-    return tag.eq_hex("0d640df58d78766c08c037a34a8b53c9d01ef0452d75b65eb52520e96b01e659");
-}
-
-fn ::main() {
-    if argon2id::self_check() { print("argon2id ok"); } else { print("argon2id FAIL"); exit(1); }
 }

@@ -23,8 +23,6 @@ const IV: u32[8] = [
     0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
 ];
 
-const PERM: i64[16] = [2, 6, 3, 10, 7, 0, 4, 13, 1, 11, 12, 5, 9, 14, 15, 8];
-
 struct Hasher {
     cv: u32[8],
     counter: u64,
@@ -39,7 +37,7 @@ struct Hasher {
 
 fn rotr(x: u32, n: u32) -> u32 { (x >> n) | (x << (32 - n)) }
 
-fn g(st: u32[16]&, a: i64, b: i64, c: i64, d: i64, mx: u32, my: u32) {
+inline fn g(st: u32[16]&, a: i64, b: i64, c: i64, d: i64, mx: u32, my: u32) {
     st[a] = st[a] + st[b] + mx;
     st[d] = rotr(st[d] ^ st[a], 16);
     st[c] = st[c] + st[d];
@@ -50,12 +48,6 @@ fn g(st: u32[16]&, a: i64, b: i64, c: i64, d: i64, mx: u32, my: u32) {
     st[b] = rotr(st[b] ^ st[c], 7);
 }
 
-fn permute(m: u32[16]&) {
-    var p: u32[16] = [0; 16];
-    for i in 0..16 { p[i] = m[PERM[i]]; }
-    for i in 0..16 { m[i] = p[i]; }
-}
-
 fn compress(cv: u32[8], msg: u32[16], counter: u64, buf_len: u32, flags: u32) -> u32[16] {
     var st: u32[16] = [
         cv[0], cv[1], cv[2], cv[3], cv[4], cv[5], cv[6], cv[7],
@@ -64,17 +56,62 @@ fn compress(cv: u32[8], msg: u32[16], counter: u64, buf_len: u32, flags: u32) ->
         buf_len, flags,
     ];
     var m = msg;
-    for round in 0..7 {
-        g(st, 0, 4, 8, 12, m[0], m[1]);
-        g(st, 1, 5, 9, 13, m[2], m[3]);
-        g(st, 2, 6, 10, 14, m[4], m[5]);
-        g(st, 3, 7, 11, 15, m[6], m[7]);
-        g(st, 0, 5, 10, 15, m[8], m[9]);
-        g(st, 1, 6, 11, 12, m[10], m[11]);
-        g(st, 2, 7, 8, 13, m[12], m[13]);
-        g(st, 3, 4, 9, 14, m[14], m[15]);
-        if round != 6 { permute(m); }
-    }
+    g(st, 0, 4, 8, 12, m[0], m[1]);
+    g(st, 1, 5, 9, 13, m[2], m[3]);
+    g(st, 2, 6, 10, 14, m[4], m[5]);
+    g(st, 3, 7, 11, 15, m[6], m[7]);
+    g(st, 0, 5, 10, 15, m[8], m[9]);
+    g(st, 1, 6, 11, 12, m[10], m[11]);
+    g(st, 2, 7, 8, 13, m[12], m[13]);
+    g(st, 3, 4, 9, 14, m[14], m[15]);
+    g(st, 0, 4, 8, 12, m[2], m[6]);
+    g(st, 1, 5, 9, 13, m[3], m[10]);
+    g(st, 2, 6, 10, 14, m[7], m[0]);
+    g(st, 3, 7, 11, 15, m[4], m[13]);
+    g(st, 0, 5, 10, 15, m[1], m[11]);
+    g(st, 1, 6, 11, 12, m[12], m[5]);
+    g(st, 2, 7, 8, 13, m[9], m[14]);
+    g(st, 3, 4, 9, 14, m[15], m[8]);
+    g(st, 0, 4, 8, 12, m[3], m[4]);
+    g(st, 1, 5, 9, 13, m[10], m[12]);
+    g(st, 2, 6, 10, 14, m[13], m[2]);
+    g(st, 3, 7, 11, 15, m[7], m[14]);
+    g(st, 0, 5, 10, 15, m[6], m[5]);
+    g(st, 1, 6, 11, 12, m[9], m[0]);
+    g(st, 2, 7, 8, 13, m[11], m[15]);
+    g(st, 3, 4, 9, 14, m[8], m[1]);
+    g(st, 0, 4, 8, 12, m[10], m[7]);
+    g(st, 1, 5, 9, 13, m[12], m[9]);
+    g(st, 2, 6, 10, 14, m[14], m[3]);
+    g(st, 3, 7, 11, 15, m[13], m[15]);
+    g(st, 0, 5, 10, 15, m[4], m[0]);
+    g(st, 1, 6, 11, 12, m[11], m[2]);
+    g(st, 2, 7, 8, 13, m[5], m[8]);
+    g(st, 3, 4, 9, 14, m[1], m[6]);
+    g(st, 0, 4, 8, 12, m[12], m[13]);
+    g(st, 1, 5, 9, 13, m[9], m[11]);
+    g(st, 2, 6, 10, 14, m[15], m[10]);
+    g(st, 3, 7, 11, 15, m[14], m[8]);
+    g(st, 0, 5, 10, 15, m[7], m[2]);
+    g(st, 1, 6, 11, 12, m[5], m[3]);
+    g(st, 2, 7, 8, 13, m[0], m[1]);
+    g(st, 3, 4, 9, 14, m[6], m[4]);
+    g(st, 0, 4, 8, 12, m[9], m[14]);
+    g(st, 1, 5, 9, 13, m[11], m[5]);
+    g(st, 2, 6, 10, 14, m[8], m[12]);
+    g(st, 3, 7, 11, 15, m[15], m[1]);
+    g(st, 0, 5, 10, 15, m[13], m[3]);
+    g(st, 1, 6, 11, 12, m[0], m[10]);
+    g(st, 2, 7, 8, 13, m[2], m[6]);
+    g(st, 3, 4, 9, 14, m[4], m[7]);
+    g(st, 0, 4, 8, 12, m[11], m[15]);
+    g(st, 1, 5, 9, 13, m[5], m[0]);
+    g(st, 2, 6, 10, 14, m[1], m[9]);
+    g(st, 3, 7, 11, 15, m[8], m[6]);
+    g(st, 0, 5, 10, 15, m[14], m[10]);
+    g(st, 1, 6, 11, 12, m[2], m[12]);
+    g(st, 2, 7, 8, 13, m[3], m[4]);
+    g(st, 3, 4, 9, 14, m[7], m[13]);
     for i in 0..8 {
         st[i] ^= st[i + 8];
         st[i + 8] ^= cv[i];
@@ -89,13 +126,11 @@ fn first8(wide: u32[16]) -> u32[8] {
 }
 
 fn load_words(bytes: u8[:], n: i64, words: u32[16]&) {
+    assert(n <= 16);
+    assert(bytes.len >= n * 4);
     for i in 0..n {
-        let j = i * 4;
-        let b0: u32 = bytes[j];
-        let b1: u32 = bytes[j + 1];
-        let b2: u32 = bytes[j + 2];
-        let b3: u32 = bytes[j + 3];
-        words[i] = b0 | (b1 << 8) | (b2 << 16) | (b3 << 24);
+        let c = bytes[i * 4..i * 4 + 4];
+        words[i] = c[0] | (c[1] as u32) << 8 | (c[2] as u32) << 16 | (c[3] as u32) << 24;
     }
 }
 
@@ -129,7 +164,6 @@ fn start_flag(h: Hasher&) -> u32 {
 fn reset_chunk(h: Hasher&, counter: u64) {
     for i in 0..8 { h.cv[i] = h.key[i]; }
     h.counter = counter;
-    for i in 0..BLOCK { h.buf[i] = 0; }
     h.buf_len = 0;
     h.blocks_done = 0;
 }
@@ -182,7 +216,6 @@ fn chunk_update(h: Hasher&, data: u8[:]) {
             let wide = compress(h.cv, words, h.counter, BLOCK, h.flags | start_flag(h));
             h.cv = first8(wide);
             h.blocks_done += 1;
-            for i in 0..BLOCK { h.buf[i] = 0; }
             h.buf_len = 0;
         }
         let space = BLOCK - h.buf_len;
@@ -223,6 +256,9 @@ struct Node {
 }
 
 fn chunk_node(h: Hasher&) -> Node {
+    if h.buf_len < BLOCK {
+        for i in h.buf_len..BLOCK { h.buf[i] = 0; }
+    }
     var words: u32[16] = [0; 16];
     load_words(h.buf, 16, words);
     return Node { h.cv, words, h.counter, h.buf_len as u32, h.flags | start_flag(h) | CHUNK_END };
@@ -269,7 +305,42 @@ fn init_derive(h: Hasher&, context: u8[:]) {
     h.flags = DERIVE_MATERIAL;
 }
 
+fn store8(words: u32[16], out: u8[:]) {
+    for i in 0..8 {
+        let w = words[i];
+        out[i * 4] = w as! u8;
+        out[i * 4 + 1] = (w >> 8) as! u8;
+        out[i * 4 + 2] = (w >> 16) as! u8;
+        out[i * 4 + 3] = (w >> 24) as! u8;
+    }
+}
+
+// One chunk has no parent CV. The 54-slot stack stays out of this path.
+fn hash_chunk(data: u8[:]) -> u8[32] {
+    var cv: u32[8] = IV;
+    var off = 0;
+    while data.len - off > BLOCK {
+        var words: u32[16] = [0; 16];
+        load_words(data[off..off + BLOCK], 16, words);
+        let flags: u32 = if off == 0 { CHUNK_START } else { 0 };
+        cv = first8(compress(cv, words, 0, BLOCK, flags));
+        off += BLOCK;
+    }
+    var buf: u8[BLOCK] = [0; BLOCK];
+    let tail = data.len - off;
+    for i in 0..tail { buf[i] = data[off + i]; }
+    var last: u32[16] = [0; 16];
+    load_words(buf, 16, last);
+    var flags: u32 = CHUNK_END | ROOT;
+    if off == 0 { flags |= CHUNK_START; }
+    let wide = compress(cv, last, 0, tail as u32, flags);
+    var out: u8[32] = [0; 32];
+    store8(wide, out);
+    return out;
+}
+
 fn hash(data: u8[:]) -> u8[32] {
+    if data.len <= CHUNK { return hash_chunk(data); }
     var h: Hasher = default<Hasher>();
     init(h);
     update(h, data);
@@ -301,55 +372,4 @@ fn xof(data: u8[:], out: u8[:]) {
     init(h);
     update(h, data);
     finalize(h, out);
-}
-
-fn nibble(c: u8) -> u8 {
-    if c >= '0' && c <= '9' { return c - '0'; }
-    if c >= 'a' && c <= 'f' { return c - 'a' + 10; }
-    return c - 'A' + 10;
-}
-
-fn eq_hex(got: u8[:], hex: u8[:]) -> bool {
-    if got.len * 2 != hex.len { return false; }
-    for i in 0..got.len {
-        let v = (nibble(hex[i * 2]) << 4) | nibble(hex[i * 2 + 1]);
-        if got[i] != v { return false; }
-    }
-    return true;
-}
-
-fn pattern(n: i64) -> u8[2048] {
-    var b: u8[2048] = [0; 2048];
-    for i in 0..n { b[i] = (i % 251) as! u8; }
-    return b;
-}
-
-fn self_check() -> bool {
-    if !hash("").eq_hex("af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262") { return false; }
-    var x: u8[64] = [0; 64];
-    xof("", x);
-    if !x.eq_hex("af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262e00f03e7b69af26b7faaf09fcd333050338ddfe085b8cc869ca98b206c08243a") { return false; }
-    let key = "whats the Elvish word for friend";
-    let ctx = "BLAKE3 2019-12-27 16:29:52 test vectors context";
-    if !keyed(key, "").eq_hex("92b2b75604ed3c761f9d6f62392c8a9227ad0ea3f09573e783f1498a4ed60d26") { return false; }
-    if !derive_key(ctx, "").eq_hex("2cc39783c223154fea8dfb7c1b1660f2ac2dcbd1c1de8277b0b0dd39b7e50d7d") { return false; }
-    let p = pattern(2048);
-    if !hash(p[..1]).eq_hex("2d3adedff11b61f14c886e35afa036736dcd87a74d27b5c1510225d0f592e213") { return false; }
-    if !hash(p[..1024]).eq_hex("42214739f095a406f3fc83deb889744ac00df831c10daa55189b5d121c855af7") { return false; }
-    if !hash(p[..1025]).eq_hex("d00278ae47eb27b34faecf67b4fe263f82d5412916c1ffd97c8cb7fb814b8444") { return false; }
-    if !hash(p[..2048]).eq_hex("e776b6028c7cd22a4d0ba182a8bf62205d2ef576467e838ed6f2529b85fba24a") { return false; }
-    if !keyed(key, p[..1024]).eq_hex("75c46f6f3d9eb4f55ecaaee480db732e6c2105546f1e675003687c31719c7ba4") { return false; }
-    if !derive_key(ctx, p[..1024]).eq_hex("7356cd7720d5b66b6d0697eb3177d9f8d73a4a5c5e968896eb6a689684302706") { return false; }
-    var h: Hasher = default<Hasher>();
-    init(h);
-    update(h, p[..100]);
-    update(h, p[100..1024]);
-    var out: u8[32] = [0; 32];
-    finalize(h, out);
-    if !out.eq_hex("42214739f095a406f3fc83deb889744ac00df831c10daa55189b5d121c855af7") { return false; }
-    return true;
-}
-
-fn ::main() {
-    if blake3::self_check() { print("blake3 ok"); } else { print("blake3 FAIL"); exit(1); }
 }
