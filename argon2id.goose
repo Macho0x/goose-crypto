@@ -149,7 +149,7 @@ fn blake2b(data: u8[:], out: u8[:]) {
 
 fn blake2b_long(input: u8[:], out: u8[:]) {
     var lenb: u8[4] = [0; 4];
-    store32(lenb, 0, out.len as! u32);
+    store32(lenb, 0, out.len as u32);
     if out.len <= 64 {
         var c = b2_init(out.len);
         b2_update(c, lenb);
@@ -275,7 +275,7 @@ fn index_alpha(pass: u32, slice: u32, index: u32, lane_length: u32, segment: u32
     rel_pos -= (area64 * rel) >> 32;
     var start: u64 = 0;
     if pass != 0 && slice != 3 { start = (slice + 1) * segment; }
-    return ((start + rel_pos) % lane_length) as! u32;
+    return ((start + rel_pos) % lane_length) as u32;
 }
 
 fn word(mem: u64[:], blk: i64, i: i64) -> u64 { mem[blk * 128 + i] }
@@ -343,10 +343,10 @@ fn fill_segment(mem: u64[>..]&, lane_length: i64, segment: i64, lanes: i64, pass
         } else {
             pseudo = word(mem, prev, 0);
         }
-        let lanes32 = lanes as! u32;
-        var ref_lane: u32 = ((pseudo >> 32) as! u32) % lanes32;
-        if pass == 0 && slice == 0 { ref_lane = lane as! u32; }
-        let ref_index = index_alpha(pass as! u32, slice as! u32, i as! u32, lane_length as! u32, segment as! u32, pseudo as! u32, ref_lane == lane as! u32);
+        let lanes32 = lanes as u32;
+        var ref_lane: u32 = ((pseudo >> 32) as u32) % lanes32;
+        if pass == 0 && slice == 0 { ref_lane = lane as u32; }
+        let ref_index = index_alpha(pass as u32, slice as u32, i as u32, lane_length as u32, segment as u32, (pseudo & 0xffffffff) as! u32, ref_lane == lane as u32);
         compress_into(mem, prev, ref_lane * lane_length + ref_index, curr, pass != 0);
         curr += 1;
         prev += 1;
@@ -362,13 +362,13 @@ fn h0(password: u8[:], salt: u8[:], secret: u8[:], ad: u8[:], m_kib: u32, passes
     store32(w, 0, passes); b2_update(c, w);
     store32(w, 0, 0x13); b2_update(c, w);
     store32(w, 0, 2); b2_update(c, w);
-    store32(w, 0, password.len as! u32); b2_update(c, w);
+    store32(w, 0, password.len as u32); b2_update(c, w);
     b2_update(c, password);
-    store32(w, 0, salt.len as! u32); b2_update(c, w);
+    store32(w, 0, salt.len as u32); b2_update(c, w);
     b2_update(c, salt);
-    store32(w, 0, secret.len as! u32); b2_update(c, w);
+    store32(w, 0, secret.len as u32); b2_update(c, w);
     b2_update(c, secret);
-    store32(w, 0, ad.len as! u32); b2_update(c, w);
+    store32(w, 0, ad.len as u32); b2_update(c, w);
     b2_update(c, ad);
     var out: u8[64] = [0; 64];
     b2_final(c, out);
@@ -383,6 +383,7 @@ fn load_block(mem: u64[>..]&, blk: i64, bytes: u8[:]) {
 fn hash(password: u8[:], salt: u8[:], secret: u8[:], ad: u8[:], m_kib: i64, passes: i64, lanes: i64, out: u8[:]) -> bool {
     if salt.len < 8 || out.len < 4 || passes < 1 || lanes < 1 { return false; }
     if m_kib > 0xffffffff || passes > 0xffffffff || lanes > 0xffffffff || out.len > 0xffffffff { return false; }
+    if password.len > 0xffffffff || salt.len > 0xffffffff || secret.len > 0xffffffff || ad.len > 0xffffffff { return false; }
     var blocks = m_kib;
     let minimum = 8 * lanes;
     if blocks < minimum { blocks = minimum; }
@@ -391,12 +392,12 @@ fn hash(password: u8[:], salt: u8[:], secret: u8[:], ad: u8[:], m_kib: i64, pass
     let lane_length = segment * 4;
     var mem: u64[>..] = [];
     mem.resize(blocks * 128, 0);
-    let dig = h0(password, salt, secret, ad, m_kib as! u32, passes as! u32, lanes as! u32, out.len as! u32);
+    let dig = h0(password, salt, secret, ad, m_kib as u32, passes as u32, lanes as u32, out.len as u32);
     for lane in 0..lanes {
         var seed: u8[72] = [0; 72];
         for i in 0..64 { seed[i] = dig[i]; }
         store32(seed, 64, 0);
-        store32(seed, 68, lane as! u32);
+        store32(seed, 68, lane as u32);
         var raw: u8[1024] = [0; 1024];
         blake2b_long(seed, raw);
         load_block(mem, lane * lane_length, raw);

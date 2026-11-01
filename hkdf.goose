@@ -24,7 +24,7 @@ fn expand(prk: u8[:], info: u8[:], out: u8[:]) -> bool {
         var m = copy(key);
         if n > 1 { sha256::mac_update(m, prev); }
         sha256::mac_update(m, info);
-        ctr[0] = n as! u8;
+        ctr[0] = n as u8;
         sha256::mac_update(m, ctr);
         let tag = sha256::mac_finish(m);
         var take = 32;

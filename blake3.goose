@@ -52,7 +52,7 @@ fn compress(cv: u32[8], msg: u32[16], counter: u64, buf_len: u32, flags: u32) ->
     var st: u32[16] = [
         cv[0], cv[1], cv[2], cv[3], cv[4], cv[5], cv[6], cv[7],
         IV[0], IV[1], IV[2], IV[3],
-        counter as! u32, (counter >> 32) as! u32,
+        (counter & 0xffffffff) as! u32, (counter >> 32) as u32,
         buf_len, flags,
     ];
     var m = msg;

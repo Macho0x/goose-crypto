@@ -235,7 +235,7 @@ fn sc_gte_mask(a: u32[9], b: u32[9]) -> u32 {
         gt |= ct_lt(bi, ai) & fresh;
         lt |= ct_lt(ai, bi) & fresh;
     }
-    return (1 - lt) as! u32;
+    return (1 - lt) as u32;
 }
 
 fn sc_gte(a: u32[9], b: u32[9]) -> bool { sc_gte_mask(a, b) == 1 }
@@ -250,7 +250,7 @@ fn sc_sub(a: u32[9], b: u32[9]) -> u32[9] {
         let plain = ai - bi;
         let wrapped = ai + 0x100000000 - bi;
         let m = 0 - under;
-        r[i] = ((plain & ~m) | (wrapped & m)) as! u32;
+        r[i] = (((plain & ~m) | (wrapped & m)) & 0xffffffff) as! u32;
         borrow = under;
     }
     return r;
@@ -291,10 +291,10 @@ fn sc_mul(a: u32[8], b: u32[8]) -> u32[8] {
             let ai: u64 = a[i];
             let bj: u64 = b[j];
             let uv = w[i + j] + ai * bj + carry;
-            w[i + j] = uv as! u32;
+            w[i + j] = (uv & 0xffffffff) as! u32;
             carry = uv >> 32;
         }
-        w[i + 8] = carry as! u32;
+        w[i + 8] = carry as u32;
     }
     return sc_reduce(w);
 }
@@ -306,10 +306,10 @@ fn sc_add(a: u32[8], b: u32[8]) -> u32[8] {
         let ai: u64 = a[i];
         let bi: u64 = b[i];
         let t = ai + bi + c;
-        w[i] = t as! u32;
+        w[i] = (t & 0xffffffff) as! u32;
         c = t >> 32;
     }
-    w[8] = c as! u32;
+    w[8] = c as u32;
     return sc_reduce(w);
 }
 

@@ -39,7 +39,7 @@ fn zero_mask(a: u32[8]) -> u32 {
     var x: u64 = 0;
     for i in 0..8 { x |= a[i]; }
     let nz = (x | (0 - x)) >> 63;
-    return (1 - nz) as! u32;
+    return (1 - nz) as u32;
 }
 
 fn is_zero(a: u32[8]) -> bool { zero_mask(a) == 1 }
@@ -55,7 +55,7 @@ fn gte_mask_n(n: i64, limb_a: u32[:], limb_b: u32[:]) -> u32 {
         gt |= ct_lt(bi, ai) & fresh;
         lt |= ct_lt(ai, bi) & fresh;
     }
-    return (1 - lt) as! u32;
+    return (1 - lt) as u32;
 }
 
 fn gte8(a: u32[8], b: u32[8]) -> bool { gte_mask_n(8, a, b) == 1 }
@@ -69,7 +69,7 @@ fn sub_limbs(a: u32[:], b: u32[:], r: u32[:]) {
         let plain = ai - bi;
         let wrapped = ai + 0x100000000 - bi;
         let m = 0 - under;
-        r[i] = ((plain & ~m) | (wrapped & m)) as! u32;
+        r[i] = (((plain & ~m) | (wrapped & m)) & 0xffffffff) as! u32;
         borrow = under;
     }
 }
@@ -108,7 +108,7 @@ fn add_u64(w: u32[16]&, pos: i64, v: u64) {
     var c = v;
     while c != 0 {
         let s = w[i] + (c & 0xffffffff);
-        w[i] = s as! u32;
+        w[i] = (s & 0xffffffff) as! u32;
         c = (c >> 32) + (s >> 32);
         i += 1;
     }
@@ -125,7 +125,7 @@ fn fold_field(w: u32[16]&) {
         let h: u64 = hi[i];
         let t = h * 977 + carry;
         let s = w[i] + (t & 0xffffffff);
-        w[i] = s as! u32;
+        w[i] = (s & 0xffffffff) as! u32;
         carry = (t >> 32) + (s >> 32);
     }
     add_u64(w, 8, carry);
@@ -134,7 +134,7 @@ fn fold_field(w: u32[16]&) {
         let cur: u64 = w[i + 1];
         let hip: u64 = hi[i];
         let s = cur + hip + carry;
-        w[i + 1] = s as! u32;
+        w[i + 1] = (s & 0xffffffff) as! u32;
         carry = s >> 32;
     }
     add_u64(w, 9, carry);
@@ -152,7 +152,7 @@ fn fold_order(w: u32[16]&) {
             let h: u64 = hi[i];
             for j in 0..5 {
                 let uv = w[i + j] + h * ORDER_K[j] + carry;
-                w[i + j] = uv as! u32;
+                w[i + j] = (uv & 0xffffffff) as! u32;
                 carry = uv >> 32;
             }
             add_u64(w, i + 5, carry);
@@ -190,11 +190,11 @@ fn fe_add(a: u32[8], b: u32[8]) -> u32[8] {
         let ai: u64 = a[i];
         let bi: u64 = b[i];
         let t = ai + bi + c;
-        r[i] = t as! u32;
+        r[i] = (t & 0xffffffff) as! u32;
         c = t >> 32;
         p[i] = prime[i];
     }
-    r[8] = c as! u32;
+    r[8] = c as u32;
     let reduced = sub9(r, p);
     r = select9(r, reduced, gte_mask_n(9, r, p));
     var out: u32[8] = [0; 8];
@@ -216,10 +216,10 @@ fn fe_mul(a: u32[8], b: u32[8]) -> u32[8] {
             let ai: u64 = a[i];
             let bj: u64 = b[j];
             let uv = w[i + j] + ai * bj + carry;
-            w[i + j] = uv as! u32;
+            w[i + j] = (uv & 0xffffffff) as! u32;
             carry = uv >> 32;
         }
-        w[i + 8] = carry as! u32;
+        w[i + 8] = carry as u32;
     }
     return fe_reduce(w);
 }
@@ -237,7 +237,7 @@ fn fe_sqr(a: u32[8]) -> u32[8] {
     for i in 0..16 {
         let wide: u64 = w[i];
         let s = (wide << 1) | carry;
-        w[i] = s as! u32;
+        w[i] = (s & 0xffffffff) as! u32;
         carry = s >> 32;
     }
     for i in 0..8 {
@@ -305,11 +305,11 @@ fn sc_add(a: u32[8], b: u32[8]) -> u32[8] {
         let ai: u64 = a[i];
         let bi: u64 = b[i];
         let t = ai + bi + c;
-        r[i] = t as! u32;
+        r[i] = (t & 0xffffffff) as! u32;
         c = t >> 32;
         n[i] = order[i];
     }
-    r[8] = c as! u32;
+    r[8] = c as u32;
     let reduced = sub9(r, n);
     r = select9(r, reduced, gte_mask_n(9, r, n));
     var out: u32[8] = [0; 8];
@@ -325,10 +325,10 @@ fn sc_mul(a: u32[8], b: u32[8]) -> u32[8] {
             let ai: u64 = a[i];
             let bj: u64 = b[j];
             let uv = w[i + j] + ai * bj + carry;
-            w[i + j] = uv as! u32;
+            w[i + j] = (uv & 0xffffffff) as! u32;
             carry = uv >> 32;
         }
-        w[i + 8] = carry as! u32;
+        w[i + 8] = carry as u32;
     }
     return sc_reduce(w);
 }
@@ -539,7 +539,7 @@ fn pubkey_compressed(secret: u8[:]) -> u8[33], bool {
     let x, y, ok2 = affine(pt_mul(base(), d));
     if !ok2 { return [0; 33], false; }
     var o: u8[33] = [2; 33];
-    o[0] = (2 | (y[0] & 1)) as! u8;
+    o[0] = (2 | (y[0] & 1)) as u8;
     store_be(x, o[1..]);
     return o, true;
 }
@@ -591,7 +591,7 @@ fn bits2octets(h: u8[:]) -> u8[32] {
 }
 
 fn select_bytes(a: u8[32], b: u8[32], bit: u32) -> u8[32] {
-    let m: u8 = (0 - bit) as! u8;
+    let m: u8 = ((0 - bit) & 0xff) as! u8;
     var r = a;
     for i in 0..32 { r[i] = a[i] ^ ((a[i] ^ b[i]) & m); }
     return r;
@@ -654,7 +654,7 @@ fn sign(secret: u8[:], digest: u8[:]) -> u8[64], bool, u8 {
     var out: u8[64] = [0; 64];
     store_be(r, out[..32]);
     store_be(s, out[32..]);
-    return out, true, (27 + recid) as! u8;
+    return out, true, (27 + recid) as u8;
 }
 
 fn verify(public: u8[:], digest: u8[:], sig: u8[:]) -> bool {
