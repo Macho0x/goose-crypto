@@ -21,24 +21,8 @@ import crypto.secp256k1;
 import .secp256k1;
 import crypto.argon2id;
 import .argon2id;
-import crypto.eip712;
-import .eip712;
-import crypto.eip191;
-import .eip191;
-import crypto.eth_tx;
-import .eth_tx;
 import crypto.bip340;
 import .bip340;
-import crypto.btc_legacy;
-import .btc_legacy;
-import crypto.btc_segwit;
-import .btc_segwit;
-import crypto.btc_taproot;
-import .btc_taproot;
-import crypto.bip322;
-import .bip322;
-import crypto.solana;
-import .solana;
 
 import os;
 
@@ -63,15 +47,7 @@ fn ::main() {
     if !go("ed25519", ed25519::self_check()) { all = false; }
     if !go("secp256k1", secp256k1::self_check()) { all = false; }
     if !go("argon2id", argon2id::self_check()) { all = false; }
-    if !go("eip712", eip712::self_check()) { all = false; }
-    if !go("eip191", eip191::self_check()) { all = false; }
-    if !go("eth_tx", eth_tx::self_check()) { all = false; }
     if !go("bip340", bip340::self_check()) { all = false; }
-    if !go("btc_legacy", btc_legacy::self_check()) { all = false; }
-    if !go("btc_segwit", btc_segwit::self_check()) { all = false; }
-    if !go("btc_taproot", btc_taproot::self_check()) { all = false; }
-    if !go("bip322", bip322::self_check()) { all = false; }
-    if !go("solana", solana::self_check()) { all = false; }
     if !all { exit(1); }
     write_stdout("crypto ok\n");
 }

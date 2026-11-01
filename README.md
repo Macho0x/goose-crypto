@@ -1,8 +1,8 @@
 # goose-crypto
 
-Version 0.16.
+Version 0.17.
 
-Hashes, public-key cryptography, and transaction signing in [Goose](https://github.com/aardappel/goose). The implementations are Goose, with no foreign calls and no vendored C. The tests in `tests/` check each module against a published vector.
+Hashes, ciphers, and public-key algorithms in [Goose](https://github.com/aardappel/goose). Transaction and typed-data signing is [goose-signature](../signature). The implementations are Goose, with no foreign calls and no vendored C. The tests in `tests/` check each module against a published vector.
 
 Copyright 2026 Macho0x. Licensed under Apache-2.0, the same license as Goose.
 
@@ -50,23 +50,15 @@ fn main() {
 | `ed25519` | Ed25519 |
 | `secp256k1` | ECDSA with an RFC 6979 nonce, low-s, recover, recovery id 27..30 |
 | `argon2id` | Argon2id |
-| `eip191` | `personal_sign` |
-| `eip712` | Typed-data digest and signature |
-| `eth_tx` | RLP, and signing hashes for legacy, EIP-155, and type 1, 2, 3, and 4 transactions, plus EIP-7702 authorization |
 | `bip340` | Schnorr signatures |
-| `btc_legacy` | Legacy sighash and strict DER |
-| `btc_segwit` | BIP-143 |
-| `btc_taproot` | BIP-341 key-path and script-path |
-| `bip322` | Simple BIP-322 proofs for P2PKH, P2WPKH, and P2TR |
-| `solana` | Legacy and v0 transaction messages, and off-chain messages |
 
-Bitcoin sighash flags are ALL, NONE, SINGLE, and ANYONECANPAY. Callers pass the script, the keys, and the message. There is no script interpreter, no UTXO set, no HD derivation, and no address codec. BIP-322 is simple proofs only. An EIP-4844 signature covers the transaction fields and the blob versioned hashes, not the blob payload. A Dogecoin legacy signature is `btc_legacy`. BNB Smart Chain is `eth_tx` with chain id 56.
+Transaction and typed-data signing is goose-signature. `bip340` is in this package. Taproot and BIP-322 call it, and it is a key algorithm alongside `ed25519`.
 
 This code does not run in constant time. Secret-dependent choices are masked in the field arithmetic, and multiplication can still take data-dependent time. Do not use it where a secret's timing can be observed.
 
 ## Benchmarks
 
-`bench.goose` times the primitives. The signing modules call those primitives; the tests are the correctness check and are not part of the timing.
+`bench.goose` times the modules in the table above. goose-signature calls those modules, and the tests in that package check the signers.
 
 ```sh
 goose build -o crypto-bench bench.goose --cc clang

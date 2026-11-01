@@ -17,7 +17,6 @@ import ed25519;
 import secp256k1;
 import argon2id;
 import bip340;
-import eip191;
 
 var secret: u8[32] = [
     1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -260,11 +259,6 @@ fn bip_verify() -> u64 {
     return mark(1, bip340::verify(bip_pk, dig, bip_sig));
 }
 
-fn personal() -> u64 {
-    let sig, ok = eip191::sign(secret, "hello world");
-    return mark(sig[64], ok);
-}
-
 fn argon() -> u64 {
     var tag: u8[32] = [0; 32];
     let ok = argon2id::hash(pw, salt, asecret, ad, 32, 3, 4, tag);
@@ -312,11 +306,9 @@ fn ready() -> bool {
     let bs, bsok = bip340::sign(secret, dig, aux);
     if !bsok || !bip340::verify(bip_pk, dig, bs) { return false; }
     copy_at(bip_sig, bs);
-    let ps, pok2 = eip191::sign(secret, "hello world");
-    if !pok2 { return false; }
     let upk, uok = secp256k1::pubkey_uncompressed(secret);
     let got, gok = secp256k1::recover(dig, secp_rec);
-    if !uok || !gok || got != upk || !eip191::verify(upk, "hello world", ps) { return false; }
+    if !uok || !gok || got != upk { return false; }
     var tag: u8[32] = [0; 32];
     if !argon2id::hash(pw, salt, asecret, ad, 32, 3, 4, tag) { return false; }
     if !eq_hex(tag, "0d640df58d78766c08c037a34a8b53c9d01ef0452d75b65eb52520e96b01e659") {
@@ -356,7 +348,6 @@ fn ::main() {
     sink += row("secp256k1 recover", 1, 2000, secp_recover);
     sink += row("bip340 sign", 1, 2000, bip_sign);
     sink += row("bip340 verify", 1, 2000, bip_verify);
-    sink += row("eip191 personal_sign", 1, 2000, personal);
     sink += row("argon2id 32KiB t=3 p=4", 1, 400, argon);
     var tail: u8[>..] = [];
     format(tail, "sink ");
