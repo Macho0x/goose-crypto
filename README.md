@@ -6,7 +6,7 @@
 
 <p align="center">
   🔑 Hashes, ciphers, and public keys for <a href="https://github.com/aardappel/goose">Goose</a><br>
-  <strong>0.18.2</strong> · <a href="LICENSE">Apache-2.0</a>
+  <strong>0.18.3</strong> · <a href="LICENSE">Apache-2.0</a>
 </p>
 
 Hashes, ciphers, and public-key algorithms, written in Goose. There are no foreign calls and no vendored C. Transaction and typed-data signing lives in [goose-signature](https://github.com/Macho0x/goose-signature). The tests in `tests/` check each module against a published vector.
@@ -75,7 +75,7 @@ goose build -o crypto-bench bench.goose --cc clang
 ./crypto-bench
 ```
 
-That clang build is the speed build. `goose bench.goose` is the same program through TinyCC.
+That clang build is the speed build. Run it on the revision before a change, then again on the change, and compare the same row names. `goose bench.goose` is the same program through TinyCC, and it is not a timing result.
 
 secp256k1 reduces products by the field prime and the group order, and multiplies the generator from a precomputed comb. Keccak absorbs eight bytes at a time. The other modules are straight-line Goose. There is no assembly. Timings depend on the machine and the Goose commit, so this page does not publish them. Faster code is welcome when `goose tests/self_check.goose` still prints `crypto ok`.
 
