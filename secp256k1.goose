@@ -383,7 +383,8 @@ fn pt_dbl(p: Pt) -> Pt {
     let a = fe_sqr(p.x);
     let b = fe_sqr(p.y);
     let c = fe_sqr(b);
-    let d = fe_add(fe_sub(fe_sub(fe_sqr(fe_add(p.x, b)), a), c), fe_sub(fe_sub(fe_sqr(fe_add(p.x, b)), a), c));
+    let t = fe_sub(fe_sub(fe_sqr(fe_add(p.x, b)), a), c);
+    let d = fe_add(t, t);
     let e = fe_add(fe_add(a, a), a);
     let f = fe_sqr(e);
     let x3 = fe_sub(f, fe_add(d, d));
@@ -392,7 +393,8 @@ fn pt_dbl(p: Pt) -> Pt {
     c8 = fe_add(c8, c8);
     c8 = fe_add(c8, c8);
     let y3 = fe_sub(fe_mul(e, fe_sub(d, x3)), c8);
-    let z3 = fe_add(fe_mul(p.y, p.z), fe_mul(p.y, p.z));
+    let yz = fe_mul(p.y, p.z);
+    let z3 = fe_add(yz, yz);
     return select_pt(Pt { x3, y3, z3 }, p, zero_mask(p.z));
 }
 
@@ -410,7 +412,8 @@ fn pt_add(p: Pt, q: Pt) -> Pt {
     let r = fe_add(rr, rr);
     let v = fe_mul(u1, i);
     let x3 = fe_sub(fe_sub(fe_sqr(r), j), fe_add(v, v));
-    let y3 = fe_sub(fe_mul(r, fe_sub(v, x3)), fe_add(fe_mul(s1, j), fe_mul(s1, j)));
+    let sj = fe_mul(s1, j);
+    let y3 = fe_sub(fe_mul(r, fe_sub(v, x3)), fe_add(sj, sj));
     let zz = fe_sub(fe_sub(fe_sqr(fe_add(p.z, q.z)), z1z1), z2z2);
     let sum = Pt { x3, y3, fe_mul(zz, h) };
     let h0 = zero_mask(h);

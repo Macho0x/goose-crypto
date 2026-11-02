@@ -102,7 +102,8 @@ fn pt_add(p: Pt, q: Pt, d: Fe) -> Pt {
 fn pt_dbl(p: Pt) -> Pt {
     let a = fsqr(p.x);
     let b = fsqr(p.y);
-    let c = fadd(fsqr(p.z), fsqr(p.z));
+    let zz = fsqr(p.z);
+    let c = fadd(zz, zz);
     let nega = fneg(a);
     let e = fsub(fsub(fsqr(fadd(p.x, p.y)), a), b);
     let g = fadd(nega, b);

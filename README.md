@@ -6,7 +6,7 @@
 
 <p align="center">
   🔑 Hashes, ciphers, and public keys for <a href="https://github.com/aardappel/goose">Goose</a><br>
-  <strong>0.18.1</strong> · <a href="LICENSE">Apache-2.0</a>
+  <strong>0.18.2</strong> · <a href="LICENSE">Apache-2.0</a>
 </p>
 
 Hashes, ciphers, and public-key algorithms, written in Goose. There are no foreign calls and no vendored C. Transaction and typed-data signing lives in [goose-signature](https://github.com/Macho0x/goose-signature). The tests in `tests/` check each module against a published vector.
